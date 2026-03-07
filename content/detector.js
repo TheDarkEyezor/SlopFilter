@@ -36,6 +36,11 @@
       { id: 's18', label: 'best practices',        re: /\bbest\s+practices\b/i, weight: 0.35 },
       { id: 's19', label: 'actionable insights',   re: /\bactionable\s+insight/i, weight: 0.65 },
       { id: 's20', label: 'deep dive',             re: /\bdeep\s+dive\b/i, weight: 0.5 },
+      // Platform propaganda / absolute-truth claims (common in AI product promotion)
+      { id: 's21', label: 'only X speaks truth',    re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, weight: 0.85 },
+      { id: 's22', label: 'only truthful X',        re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, weight: 0.8 },
+      { id: 's23', label: 'X is the future',        re: /\b\w+\s+is\s+the\s+(only|true|real|future)\s+(path|way|truth|source|answer|solution)\b/i, weight: 0.6 },
+      { id: 's24', label: 'censored/banned/silenced',re: /\b(censored|silenced|shadow.?banned|deplatformed|cancelled)\s+(for\s+)?(telling|speaking|saying|posting)?\s*(the\s+)?truth\b/i, weight: 0.75 },
     ],
 
     // ── AI-GENERATED MARKERS ────────────────────────────────────────────────────
@@ -73,7 +78,13 @@
       { id: 'r09', label: 'MSM/mainstream media',  re: /\b(mainstream\s+media|MSM|fake\s+news)\b/i, weight: 0.55 },
       { id: 'r10', label: "they don't want you",   re: /\bthey\s+(don['\u2019]?t|do\s+not)\s+want\s+you\s+to\b/i, weight: 0.8 },
       { id: 'r11', label: 'wake up sheeple',       re: /\bwake\s+up\b.*\b(sheeple|people|everyone)\b/i, weight: 0.8 },
-      { id: 'r12', label: 'elites globalists',     re: /\b(global\s*ist|global\s+elite|deep\s+state|new\s+world\s+order)\b/i, weight: 0.7 },
+      { id: 'r12', label: 'elites globalists',       re: /\b(global\s*ist|global\s+elite|deep\s+state|new\s+world\s+order)\b/i, weight: 0.7 },
+      // Hypothetical moral traps / binary dilemmas (common rage-bait format on Twitter)
+      { id: 'r13', label: 'hypothetical dilemma',     re: /\bif\s+the\s+only\s+way\s+to\b.{0,80}\bwould\s+you\b/i, weight: 0.85 },
+      { id: 'r14', label: 'single word answer trap',  re: /\b(single\s+word|one\s+word|yes\s+or\s+no)[^.!?]{0,40}(answer|reply|respond)/i, weight: 0.75 },
+      { id: 'r15', label: 'this is what they want',   re: /\bthis\s+is\s+(exactly\s+)?what\s+(they|the\s+(left|right|media|elites?|woke))\s+(want|were|needed)\b/i, weight: 0.8 },
+      { id: 'r16', label: 'name one time',             re: /\bname\s+(one|a\s+single)\s+time\s+when\b/i, weight: 0.7 },
+      { id: 'r17', label: 'ratio / L / W comment',    re: /^\s*(ratio|massive\s+[lw]|take\s+the\s+[lw]|[lw]\s*\+\s*ratio)\s*[.!]?\s*$/i, weight: 0.65 },
     ],
 
     // ── MISINFORMATION SIGNALS ──────────────────────────────────────────────────
@@ -121,6 +132,30 @@
     return 0;
   }
 
+  /**
+   * Detects anaphora propaganda: ≥3 short sentences starting with the same word.
+   * Catches patterns like "Only Grok speaks truth. Only truthful AI is safe. Only truth..."
+   * or "This is war. This is tyranny. This is what they wanted."
+   * Returns 0–0.9 score.
+   */
+  function anaphoraScore(text) {
+    const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 5);
+    if (sentences.length < 3) return 0;
+
+    // Count leading words
+    const leadCounts = {};
+    for (const s of sentences) {
+      const first = (s.match(/^\s*(\w+)/)?.[1] || '').toLowerCase();
+      if (first) leadCounts[first] = (leadCounts[first] || 0) + 1;
+    }
+    const maxRepeat = Math.max(...Object.values(leadCounts));
+
+    // 3 sentences with same opener in a short post = propaganda anaphora
+    if (maxRepeat >= 3 && sentences.length <= 6) return 0.7;
+    if (maxRepeat >= 4) return 0.85;
+    return 0;
+  }
+
   // ─── CORE DETECTION FUNCTION ──────────────────────────────────────────────────
 
   /**
@@ -157,6 +192,8 @@
     // Add density bonus to slop score
     if (modes.slop) {
       scores.slop = Math.min(1, scores.slop + densityScore(text));
+      // Anaphora check: short posts with repetitive sentence-openers (propaganda style)
+      scores.slop = Math.min(1, scores.slop + anaphoraScore(text));
     }
 
     // Pick dominant category

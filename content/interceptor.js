@@ -55,6 +55,10 @@
     { re: /\byou\s+won['''\u2019ʼ]?t\s+(believe|guess)\b/i,                                     w: 0.85 }, // r01
     { re: /\bshare\s+(this\s+)?(before\s+(it['''\u2019]?s?\s+)?(deleted|taken\s+down|removed)|now!)/i, w: 0.95 }, // r05
     { re: /\bthey\s+(don['''\u2019]?t|do\s+not)\s+want\s+you\s+to\b/i,                         w: 0.8  }, // r10
+    { re: /\bif\s+the\s+only\s+way\s+to\b.{0,80}\bwould\s+you\b/i,                             w: 0.85 }, // r13
+    // ── Platform propaganda / absolute truth claims ───────────────────────────
+    { re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, w: 0.85 }, // s21
+    { re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, w: 0.8 }, // s22
   ];
 
   // Threshold: weighted score must exceed this to be filtered at the network layer.
