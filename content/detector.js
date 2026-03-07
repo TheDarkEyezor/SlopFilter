@@ -37,10 +37,14 @@
       { id: 's19', label: 'actionable insights',   re: /\bactionable\s+insight/i, weight: 0.65 },
       { id: 's20', label: 'deep dive',             re: /\bdeep\s+dive\b/i, weight: 0.5 },
       // Platform propaganda / absolute-truth claims (common in AI product promotion)
-      { id: 's21', label: 'only X speaks truth',    re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, weight: 0.85 },
-      { id: 's22', label: 'only truthful X',        re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, weight: 0.8 },
+      { id: 's21', label: 'only X speaks truth',    re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, weight: 0.45 },
+      { id: 's22', label: 'only truthful X',        re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, weight: 0.45 },
       { id: 's23', label: 'X is the future',        re: /\b\w+\s+is\s+the\s+(only|true|real|future)\s+(path|way|truth|source|answer|solution)\b/i, weight: 0.6 },
       { id: 's24', label: 'censored/banned/silenced',re: /\b(censored|silenced|shadow.?banned|deplatformed|cancelled)\s+(for\s+)?(telling|speaking|saying|posting)?\s*(the\s+)?truth\b/i, weight: 0.75 },
+      // Truth-bait / bare truth assertions (common in AI-generated image posts and propaganda)
+      { id: 's25', label: 'do you want the truth',  re: /\bdo\s+you\s+want\s+(to\s+)?(know\s+)?the\s+truth\b/i, weight: 0.7 },
+      { id: 's26', label: 'this/that is the truth',  re: /\b(this|that)\s+is\s+the\s+(?:real\s+|whole\s+)?truth\b/i, weight: 0.65 },
+      { id: 's27', label: 'truth/reality bomb',      re: /\bthe\s+truth\s+(is|will|always|never|shall)\b[^.!?]{0,60}[.!?]/i, weight: 0.5 },
     ],
 
     // ── AI-GENERATED MARKERS ────────────────────────────────────────────────────
@@ -63,6 +67,9 @@
       { id: 'a16', label: 'in summary it is clear',re: /\bin\s+summary[,.]?\s+it\s+is\s+(clear|evident|apparent)\b/i, weight: 0.8 },
       { id: 'a17', label: 'let us explore',        re: /\b(let['\s]s?|let\s+us)\s+explore\b/i, weight: 0.55 },
       { id: 'a18', label: 'dive into the world',   re: /\bdive\s+into\s+the\s+world\s+of\b/i, weight: 0.75 },
+      // AI image/content attribution lines — explicit signals of generated content
+      { id: 'a19', label: 'AI image attribution',   re: /\b(made|created|generated|imagined|designed|built)\s+(by|with|using)\s+(grok|dall[- ]?e|midjourney|stable\s+diffusion|firefly|ideogram|sora|openai|gemini|claude|copilot|kling|runway)\b/i, weight: 0.9 },
+      { id: 'a20', label: 'Grok Imagine tag',       re: /\bgrok\s+imagine\b|@grok\s+imagine\b/i, weight: 0.85 },
     ],
 
     // ── RAGE-BAIT ───────────────────────────────────────────────────────────────
@@ -85,6 +92,19 @@
       { id: 'r15', label: 'this is what they want',   re: /\bthis\s+is\s+(exactly\s+)?what\s+(they|the\s+(left|right|media|elites?|woke))\s+(want|were|needed)\b/i, weight: 0.8 },
       { id: 'r16', label: 'name one time',             re: /\bname\s+(one|a\s+single)\s+time\s+when\b/i, weight: 0.7 },
       { id: 'r17', label: 'ratio / L / W comment',    re: /^\s*(ratio|massive\s+[lw]|take\s+the\s+[lw]|[lw]\s*\+\s*ratio)\s*[.!]?\s*$/i, weight: 0.65 },
+      // Dehumanising language applied to groups (nearly always political rage-bait)
+      { id: 'r18', label: 'dehumanize parasitic/vermin', re: /\b(parasitic|verminous?|subhuman|cockroach|locust|infestation|plague)\b/i, weight: 0.9 },
+      // Binary-choice political propaganda  "you will have 2 choices" / "2 options remain"
+      { id: 'r19', label: 'binary choice propaganda',    re: /\b(you\s+(will\s+)?have\s+(only\s+)?\d\s+choices?|two\s+choices?\s+(remain|only|left))\b/i, weight: 0.85 },
+      // Ethnonationalist replacement / extinction rhetoric
+      { id: 'r20', label: 'replacement rhetoric',        re: /\b(great\s+replacement|demographic\s+replacement|population\s+replacement|white\s+genocide|ethnic\s+replacement)\b/i, weight: 0.95 },
+      { id: 'r21', label: 'extinction/end of a people',  re: /\b(extinction|erasure|end|death)\s+(of|as)\s+(a\s+|the\s+)?(race|people|native|culture|civilis|nation)|\b(native\s+peoples?|rightful\s+heirs?|stewards?\s+(of\s+)?our\s+(homeland|land|country))\b/i, weight: 0.9 },
+      // UK far-right rage-bait framing
+      { id: 'r22', label: 'two-tier policing',           re: /\btwo[- ]tier\s+polic(ing|e|ed)\b/i, weight: 0.8 },
+      { id: 'r23', label: 'stop the boats',              re: /\bstop\s+the\s+boats\b/i, weight: 0.7 },
+      { id: 'r24', label: 'send them back',              re: /\bsend\s+them\s+back\b/i, weight: 0.75 },
+      { id: 'r25', label: 'mass migration panic',        re: /\b(mass\s+migration|invasion)\b/i, weight: 0.7 },
+      { id: 'r26', label: 'grooming gangs cover-up',     re: /\bgrooming\s+gangs?\b.{0,40}\b(cover.?up|hidden|suppressed)\b/i, weight: 0.8 },
     ],
 
     // ── MISINFORMATION SIGNALS ──────────────────────────────────────────────────
@@ -135,12 +155,15 @@
   /**
    * Detects anaphora propaganda: ≥3 short sentences starting with the same word.
    * Catches patterns like "Only Grok speaks truth. Only truthful AI is safe. Only truth..."
-   * or "This is war. This is tyranny. This is what they wanted."
-   * Returns 0–0.9 score.
+   * or "If you do not want X... If you do not want Y... If you do not want Z..."
+   *
+   * Returns { score, category } so the caller can add to the right bucket:
+   *   - "if / we / they / our / never" openers → political mobilisation → rage
+   *   - everything else (only / this / the / ...) → filler/slop propaganda → slop
    */
   function anaphoraScore(text) {
     const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 5);
-    if (sentences.length < 3) return 0;
+    if (sentences.length < 3) return { score: 0, category: 'slop' };
 
     // Count leading words
     const leadCounts = {};
@@ -148,12 +171,18 @@
       const first = (s.match(/^\s*(\w+)/)?.[1] || '').toLowerCase();
       if (first) leadCounts[first] = (leadCounts[first] || 0) + 1;
     }
-    const maxRepeat = Math.max(...Object.values(leadCounts));
 
-    // 3 sentences with same opener in a short post = propaganda anaphora
-    if (maxRepeat >= 3 && sentences.length <= 6) return 0.7;
-    if (maxRepeat >= 4) return 0.85;
-    return 0;
+    const [maxWord, maxRepeat] = Object.entries(leadCounts)
+      .reduce((a, b) => (b[1] > a[1] ? b : a), ['', 0]);
+
+    // Us-vs-them / conditional-threat openers signal political rage-bait,
+    // not generic AI filler.
+    const RAGE_LEADERS = new Set(['if', 'we', 'they', 'our', 'never', 'you', 'not']);
+    const category = RAGE_LEADERS.has(maxWord) ? 'rage' : 'slop';
+
+    if (maxRepeat >= 3 && sentences.length <= 8) return { score: 0.7, category };
+    if (maxRepeat >= 4) return { score: 0.85, category };
+    return { score: 0, category: 'slop' };
   }
 
   // ─── CORE DETECTION FUNCTION ──────────────────────────────────────────────────
@@ -165,17 +194,28 @@
    * @param {object} modes  - Which categories to check: { slop, ai, rage }
    * @returns {{
    *   flagged:  boolean,
-   *   score:    number,       // 0–1
+   *   score:    number,       // 0–1 (dominant category score)
    *   category: string|null, // dominant category
+   *   topCategory: string,   // dominant category even below threshold
+   *   scores:   object,      // per-category scores
    *   hits:     string[],    // matched pattern labels
    * }}
    */
   function detect(text, modes = { slop: true, ai: true, rage: true, misinfo: true }) {
     if (!text || text.trim().length < 30) {
-      return { flagged: false, needsFactCheck: false, score: 0, category: null, hits: [] };
+      return {
+        flagged: false,
+        needsFactCheck: false,
+        score: 0,
+        category: null,
+        topCategory: 'none',
+        scores: { slop: 0, ai: 0, rage: 0, misinfo: 0 },
+        hits: [],
+      };
     }
 
     const scores = { slop: 0, ai: 0, rage: 0, misinfo: 0 };
+    const hitCounts = { slop: 0, ai: 0, rage: 0, misinfo: 0 };
     const hits = [];
 
     for (const [category, patterns] of Object.entries(PATTERNS)) {
@@ -184,6 +224,7 @@
       for (const p of patterns) {
         if (p.re.test(text)) {
           scores[category] = Math.min(1, scores[category] + p.weight);
+          hitCounts[category] += 1;
           hits.push(`[${category}] ${p.label}`);
         }
       }
@@ -192,8 +233,14 @@
     // Add density bonus to slop score
     if (modes.slop) {
       scores.slop = Math.min(1, scores.slop + densityScore(text));
-      // Anaphora check: short posts with repetitive sentence-openers (propaganda style)
-      scores.slop = Math.min(1, scores.slop + anaphoraScore(text));
+    }
+    // Anaphora: route to slop or rage depending on the dominant lead word
+    if (modes.slop || modes.rage) {
+      const anaphora = anaphoraScore(text);
+      if (anaphora.score > 0) {
+        const target = (anaphora.category === 'rage' && modes.rage) ? 'rage' : 'slop';
+        if (modes[target]) scores[target] = Math.min(1, scores[target] + anaphora.score);
+      }
     }
 
     // Pick dominant category
@@ -204,7 +251,20 @@
     const topScore = dominant[1];
     const THRESHOLD = 0.6;
 
-    const dominantCategory = topScore >= THRESHOLD ? dominant[0] : null;
+    let dominantCategory = topScore >= THRESHOLD ? dominant[0] : null;
+    // Rage/slop arbitration: if rage is close and has stronger signal count,
+    // prefer rage classification to avoid political rage-bait being labelled slop.
+    if (dominantCategory && dominantCategory !== 'rage' && modes.rage) {
+      if (scores.rage >= THRESHOLD && (scores.rage + 0.05 >= scores.slop || hitCounts.rage > hitCounts.slop)) {
+        dominantCategory = 'rage';
+      }
+    }
+    const roundedScores = {
+      slop: parseFloat(scores.slop.toFixed(3)),
+      ai: parseFloat(scores.ai.toFixed(3)),
+      rage: parseFloat(scores.rage.toFixed(3)),
+      misinfo: parseFloat(scores.misinfo.toFixed(3)),
+    };
 
     return {
       flagged:        topScore >= THRESHOLD,
@@ -212,6 +272,8 @@
       needsFactCheck: dominantCategory === 'misinfo',
       score:          parseFloat(topScore.toFixed(3)),
       category:       dominantCategory,
+      topCategory:    dominant[0],
+      scores:         roundedScores,
       hits,
     };
   }

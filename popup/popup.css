@@ -147,6 +147,52 @@ input:checked ~ .slider::after {
   background: #fff;
 }
 
+/* ── Replacement mode section ─────────────────────────────────────────────── */
+.replace-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.replace-section h2 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #555;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.replace-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.replace-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.replace-opt:hover { background: #1a1a1a; }
+
+.replace-opt input[type="radio"] {
+  accent-color: #2a6099;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.replace-opt span {
+  font-size: 12px;
+  color: #ccc;
+}
+
 /* ── Footer ──────────────────────────────────────────────────────────────── */
 footer {
   padding: 10px 12px;

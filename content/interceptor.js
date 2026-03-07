@@ -56,9 +56,19 @@
     { re: /\bshare\s+(this\s+)?(before\s+(it['''\u2019]?s?\s+)?(deleted|taken\s+down|removed)|now!)/i, w: 0.95 }, // r05
     { re: /\bthey\s+(don['''\u2019]?t|do\s+not)\s+want\s+you\s+to\b/i,                         w: 0.8  }, // r10
     { re: /\bif\s+the\s+only\s+way\s+to\b.{0,80}\bwould\s+you\b/i,                             w: 0.85 }, // r13
+    // ── Dehumanising / ethnonationalist rhetoric ─────────────────────────────
+    { re: /\b(parasitic|verminous?|subhuman|cockroach|locust|infestation)\b/i,                  w: 0.9  }, // r18
+    { re: /\b(great\s+replacement|demographic\s+replacement|white\s+genocide|ethnic\s+replacement)\b/i, w: 0.95 }, // r20
+    { re: /\b(extinction|erasure|end)\s+(of|as)\s+(a\s+|the\s+)?(race|people|native|culture)|\b(native\s+peoples?|rightful\s+heirs?)\b/i, w: 0.9 }, // r21
     // ── Platform propaganda / absolute truth claims ───────────────────────────
     { re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, w: 0.85 }, // s21
     { re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, w: 0.8 }, // s22
+    // ── Truth-bait assertions ─────────────────────────────────────────────────
+    { re: /\bdo\s+you\s+want\s+(to\s+)?(know\s+)?the\s+truth\b/i,                                 w: 0.7  }, // s25
+    { re: /\b(this|that)\s+is\s+the\s+(?:real\s+|whole\s+)?truth\b/i,                             w: 0.65 }, // s26
+    // ── AI-generated image attribution (Grok, Midjourney, DALL-E, etc.) ──────
+    { re: /\b(made|created|generated|imagined|designed|built)\s+(by|with|using)\s+(grok|dall[- ]?e|midjourney|stable\s+diffusion|firefly|ideogram|sora|openai|gemini|claude|copilot|kling|runway)\b/i, w: 0.9 }, // a19
+    { re: /\bgrok\s+imagine\b|@grok\s+imagine\b/i,                                                 w: 0.85 }, // a20
   ];
 
   // Threshold: weighted score must exceed this to be filtered at the network layer.
@@ -80,7 +90,24 @@
   }
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
-  let interceptorEnabled = true;
+  let interceptorSettings = {
+    enabled: true,
+    debugHighlight: false,
+    modes: { slop: true, ai: true, rage: true, misinfo: true },
+    replacementMode: 'off',
+  };
+
+  function isInterceptorActive() {
+    if (!interceptorSettings.enabled) return false;
+    // In debug highlight mode we keep payloads intact so DOM-layer highlighting
+    // can show exactly what would have been removed.
+    if (interceptorSettings.debugHighlight) return false;
+    // When replacement placeholders are enabled, keep feed items in DOM so they
+    // can be replaced in-place by content.js.
+    if (interceptorSettings.replacementMode === 'fun_facts') return false;
+    // If all modes are off, interception should be off too.
+    return Object.values(interceptorSettings.modes || {}).some(Boolean);
+  }
 
   // ─── SITE ADAPTERS ────────────────────────────────────────────────────────────
   // Each adapter: { test(url): boolean, filter(json): number }
@@ -106,26 +133,18 @@
 
   // ─── TWITTER ADAPTER ─────────────────────────────────────────────────────────
 
-  /** Extract tweet text from a timeline entry object (handles various shapes). */
+  function textFromTweetResult(tweetResult) {
+    return tweetResult?.legacy?.full_text
+        || tweetResult?.tweet?.legacy?.full_text
+        || null;
+  }
+
+  /** Extract tweet text from a single-tweet timeline entry object. */
   function twitterTextFromEntry(entry) {
     try {
-      // Standard single-tweet entry
       const itemContent = entry?.content?.itemContent;
       const tweetResult = itemContent?.tweet_results?.result;
-      if (tweetResult) {
-        return tweetResult.legacy?.full_text
-            || tweetResult.tweet?.legacy?.full_text
-            || null;
-      }
-      // TimelineTimelineModule (multi-item rows, e.g. "who to follow")
-      const items = entry?.content?.items;
-      if (Array.isArray(items)) {
-        for (const item of items) {
-          const r = item?.item?.itemContent?.tweet_results?.result;
-          const t = r?.legacy?.full_text || r?.tweet?.legacy?.full_text;
-          if (t) return t;
-        }
-      }
+      return textFromTweetResult(tweetResult);
     } catch { /* ignore */ }
     return null;
   }
@@ -138,8 +157,19 @@
       if (!Array.isArray(instructions)) return;
       for (const instruction of instructions) {
         if (!Array.isArray(instruction?.entries)) continue;
-        const before = instruction.entries.length;
         instruction.entries = instruction.entries.filter(entry => {
+          // Multi-item timeline modules: remove matching items, keep module if any remain.
+          if (Array.isArray(entry?.content?.items)) {
+            entry.content.items = entry.content.items.filter(item => {
+              const r = item?.item?.itemContent?.tweet_results?.result;
+              const text = textFromTweetResult(r);
+              if (text && liteDetect(text)) { removed++; return false; }
+              return true;
+            });
+            return entry.content.items.length > 0;
+          }
+
+          // Standard single-tweet entries.
           const text = twitterTextFromEntry(entry);
           if (text && liteDetect(text)) {
             removed++;
@@ -226,22 +256,38 @@
     }));
   }
 
+  function notifyFeedSeen(adapterName) {
+    window.dispatchEvent(new CustomEvent('slopfilter:feed-seen', {
+      detail: { source: adapterName, ts: Date.now() },
+    }));
+  }
+
   // ─── CORE PROCESSOR ──────────────────────────────────────────────────────────
 
+  function getAdapterForUrl(url) {
+    return ADAPTERS.find(a => a.test(url)) || null;
+  }
+
   function processJson(url, json) {
-    if (!interceptorEnabled) return json;
-    for (const adapter of ADAPTERS) {
-      if (adapter.test(url)) {
-        const removed = adapter.filter(json);
-        if (removed > 0) notifyRemoved(removed, adapter.name);
-        break; // at most one adapter per URL
-      }
-    }
+    const adapter = getAdapterForUrl(url);
+    if (!adapter) return json;
+
+    // Always emit feed-seen for matched feed responses, even when filtering
+    // is disabled (debug highlight / replacement modes).
+    notifyFeedSeen(adapter.name);
+
+    if (!isInterceptorActive()) return json;
+    const removed = adapter.filter(json);
+    if (removed > 0) notifyRemoved(removed, adapter.name);
     return json; // mutated in-place
   }
 
   function shouldIntercept(url) {
-    return interceptorEnabled && ADAPTERS.some(a => a.test(url));
+    return isInterceptorActive() && Boolean(getAdapterForUrl(url));
+  }
+
+  function shouldWatchFeed(url) {
+    return Boolean(getAdapterForUrl(url));
   }
 
   // ─── FETCH PATCH ─────────────────────────────────────────────────────────────
@@ -255,7 +301,11 @@
 
     const response = await _nativeFetch.apply(this, args);
 
-    if (!shouldIntercept(url)) return response;
+    const intercept = shouldIntercept(url);
+    if (!intercept) {
+      if (shouldWatchFeed(url)) notifyFeedSeen(getAdapterForUrl(url).name);
+      return response;
+    }
     if (!(response.headers.get('content-type') || '').includes('application/json')) return response;
 
     try {
@@ -290,31 +340,59 @@
   const _nativeOpen = _xhrProto.open;
   const _nativeSend = _xhrProto.send;
 
-  // Grab the prototype-level descriptor so we can call the real getter.
-  const _rtDesc = Object.getOwnPropertyDescriptor(_xhrProto, 'responseText');
-  const _rDesc  = Object.getOwnPropertyDescriptor(_xhrProto, 'response');
+  // Grab the prototype-level descriptors so we can call the real getters.
+  // Using these instead of this.prop bypasses any Proxy/instrumentation layer
+  // that Twitter or another extension may have placed on the XHR instance,
+  // which is the root cause of the "Maximum call stack size exceeded" error.
+  const _rtDesc           = Object.getOwnPropertyDescriptor(_xhrProto, 'responseText');
+  const _rDesc            = Object.getOwnPropertyDescriptor(_xhrProto, 'response');
+  const _readyStateDesc   = Object.getOwnPropertyDescriptor(_xhrProto, 'readyState');
+  const _responseTypeDesc = Object.getOwnPropertyDescriptor(_xhrProto, 'responseType');
 
   _xhrProto.open = function (method, url, ...rest) {
     this.__slopUrl = String(url || '');
     this.__slopFiltered = undefined; // lazy cache
+    this.__slopFeedSeen = false;
+    this.__slopAdapter = getAdapterForUrl(this.__slopUrl);
+
+    if (this.__slopAdapter && !this.__slopFeedSeen) {
+      this.__slopFeedSeen = true;
+      notifyFeedSeen(this.__slopAdapter.name);
+    }
 
     if (shouldIntercept(this.__slopUrl)) {
       // Override the responseText getter on this instance.
       const self = this;
 
       function getFiltered() {
+        // Short-circuit: already computed.
         if (self.__slopFiltered !== undefined) return self.__slopFiltered;
-        // Read the real underlying text via the prototype descriptor.
-        const raw = _rtDesc.get.call(self);
-        if (!raw) return raw;
-        try {
-          const json = JSON.parse(raw);
-          processJson(self.__slopUrl, json);
-          self.__slopFiltered = JSON.stringify(json);
-        } catch {
-          self.__slopFiltered = raw; // parse failed — pass through
+
+        // Re-entrancy guard: if Twitter's instrumentation (or another extension's
+        // XHR proxy) reads xhr.responseText WHILE we're inside this getter, we'd
+        // recurse infinitely because __slopFiltered is still undefined at that
+        // point and the guard above would pass.  Detect the cycle and fall back
+        // to the native prototype getter immediately.
+        if (self.__slopRtLock) {
+          return _rtDesc ? _rtDesc.get.call(self) : '';
         }
-        return self.__slopFiltered;
+        self.__slopRtLock = true;
+        try {
+          // Read the real underlying text via the prototype descriptor — bypasses
+          // our own instance-level getter so there is no self-referential loop.
+          const raw = _rtDesc.get.call(self);
+          if (!raw) { self.__slopFiltered = raw; return raw; }
+          try {
+            const json = JSON.parse(raw);
+            processJson(self.__slopUrl, json);
+            self.__slopFiltered = JSON.stringify(json);
+          } catch {
+            self.__slopFiltered = raw; // parse failed — pass through unchanged
+          }
+          return self.__slopFiltered;
+        } finally {
+          self.__slopRtLock = false;
+        }
       }
 
       Object.defineProperty(this, 'responseText', {
@@ -325,14 +403,31 @@
 
       // Also override 'response', which may be the parsed JSON object when
       // responseType === "json".
+      // Re-entrancy guard: if Twitter's instrumentation (or another extension's
+      // XHR proxy) reads xhr.response WHILE our getter is already running we'd
+      // get infinite recursion.  The __slopRespLock flag breaks the cycle and
+      // delegates to the native prototype getter instead.
       Object.defineProperty(this, 'response', {
         get: function () {
-          if (self.readyState < 4) return null;
-          if (self.responseType === 'json') {
-            const text = getFiltered();
-            try { return JSON.parse(text); } catch { return null; }
+          if (self.__slopRespLock) {
+            // Already inside this getter — return native value to break the cycle.
+            return _rDesc ? _rDesc.get.call(self) : null;
           }
-          return getFiltered();
+          self.__slopRespLock = true;
+          try {
+            // Read readyState / responseType via native prototype getters to
+            // avoid any intermediate proxy that could re-trigger this getter.
+            const readyState   = _readyStateDesc   ? _readyStateDesc.get.call(self)   : self.readyState;
+            const responseType = _responseTypeDesc ? _responseTypeDesc.get.call(self) : self.responseType;
+            if (readyState < 4) return null;
+            if (responseType === 'json') {
+              const text = getFiltered();
+              try { return JSON.parse(text); } catch { return null; }
+            }
+            return getFiltered();
+          } finally {
+            self.__slopRespLock = false;
+          }
         },
         configurable: true,
         enumerable: true,
@@ -346,10 +441,24 @@
   // content.js (isolated world) broadcasts settings here via CustomEvent.
 
   window.addEventListener('slopfilter:update-settings', (e) => {
-    if (e?.detail?.enabled === false) {
-      interceptorEnabled = false;
-    } else if (e?.detail?.enabled === true) {
-      interceptorEnabled = true;
+    const detail = e?.detail || {};
+    if (typeof detail.enabled === 'boolean') {
+      interceptorSettings.enabled = detail.enabled;
+    }
+    if (typeof detail.debugHighlight === 'boolean') {
+      interceptorSettings.debugHighlight = detail.debugHighlight;
+    }
+    if (detail.modes && typeof detail.modes === 'object') {
+      interceptorSettings.modes = {
+        slop: true,
+        ai: true,
+        rage: true,
+        misinfo: true,
+        ...detail.modes,
+      };
+    }
+    if (typeof detail.replacementMode === 'string') {
+      interceptorSettings.replacementMode = detail.replacementMode === 'fun_facts' ? 'fun_facts' : 'off';
     }
   });
 

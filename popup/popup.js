@@ -15,6 +15,7 @@ let settings = {
   modes: { slop: true, ai: true, rage: true, misinfo: true },
   debugHighlight: false,
   debugScanAll:   false,
+  replacementMode: 'off',
 };
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
@@ -30,6 +31,9 @@ function applySettingsToUI() {
 
   $('debugToggle').checked       = settings.debugHighlight;
   $('debugScanAllToggle').checked = settings.debugScanAll;
+
+  const activeRadio = document.querySelector(`[name="replacementMode"][value="${settings.replacementMode || 'off'}"]`);
+  if (activeRadio) activeRadio.checked = true;
 }
 
 function pushSettings() {
@@ -83,6 +87,13 @@ $('debugScanAllToggle').addEventListener('change', e => {
   pushSettings();
 });
 
+document.querySelectorAll('[name="replacementMode"]').forEach(radio => {
+  radio.addEventListener('change', e => {
+    settings.replacementMode = e.target.value;
+    pushSettings();
+  });
+});
+
 $('rescanBtn').addEventListener('click', () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) return;
@@ -109,11 +120,12 @@ $('fcApiKeySave').addEventListener('click', () => {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 chrome.storage.sync.get(
-  { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, debugHighlight: false, debugScanAll: false, factCheckApiKey: '' },
+  { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, debugHighlight: false, debugScanAll: false, factCheckApiKey: '', replacementMode: 'off' },
   (stored) => {
     settings = { ...settings, ...stored };
     settings.modes = { slop: true, ai: true, rage: true, misinfo: true, ...stored.modes };
-    settings.debugScanAll = stored.debugScanAll ?? false;
+    settings.debugScanAll    = stored.debugScanAll    ?? false;
+    settings.replacementMode = stored.replacementMode === 'fun_facts' ? 'fun_facts' : 'off';
     if (fcKeyInput) fcKeyInput.value = stored.factCheckApiKey || '';
     applySettingsToUI();
     refreshStats();
