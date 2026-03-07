@@ -25,8 +25,8 @@
   let lastScannedText = new WeakMap();
   /** Prevent duplicate queue entries for the same element. */
   let queued = new WeakSet();
-  /** Avoid re-processing the same media elements repeatedly. */
-  let seenMedia = new WeakSet();
+  /** Media scan state to support retries for videos as frames load over time. */
+  let mediaScanState = new WeakMap();
 
   /** Removed element count, for popup badge (DOM-layer + network-layer combined). */
   let removedCount = 0;
@@ -84,6 +84,8 @@
   ].join(',');
 
   const AI_MEDIA_RE = /\b(ai[- ]?(generated|image|art)|generated\s+with|synthetic\s+media|deepfake|midjourney|dall[- ]?e|stable\s+diffusion|grok|sora|ideogram|runway|firefly|flux)\b/i;
+  const AI_MODEL_TOKEN_RE = /\b(midjourney|dall[- ]?e|stable\s+diffusion|sdxl|flux|grok|sora|ideogram|runway|firefly|kling|gen[- ]?ai|deepfake)\b/gi;
+  const AI_PROMPT_TOKEN_RE = /\b(prompt|negative\s+prompt|cfg|seed|sampler|steps|stylize|ar|aspect\s+ratio)\b|--(ar|v|stylize|seed)\b/gi;
 
   /** Returns true if this element lives inside a skip zone on Twitter. */
   function inSkipZone(el) {
@@ -324,6 +326,47 @@
     return { score: clamp01(score), hits };
   }
 
+  function mediaContextScore(target, el) {
+    let score = 0;
+    const hits = [];
+
+    const nearby = [
+      target.getAttribute('aria-label'),
+      target.getAttribute('title'),
+      el.closest('figure,article,section,div')?.textContent,
+      target.textContent,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .slice(0, 1800);
+
+    if (!nearby) return { score: 0, hits };
+
+    if (AI_MEDIA_RE.test(nearby)) {
+      score += 0.5;
+      hits.push('[ai] context marker');
+    }
+
+    const modelMatches = (nearby.match(AI_MODEL_TOKEN_RE) || []).length;
+    if (modelMatches >= 1) {
+      score += 0.2;
+      hits.push('[ai] model token');
+    }
+    if (modelMatches >= 2) {
+      score += 0.15;
+      hits.push('[ai] multi-model token');
+    }
+
+    const promptMatches = (nearby.match(AI_PROMPT_TOKEN_RE) || []).length;
+    if (promptMatches >= 2) {
+      score += 0.25;
+      hits.push('[ai] prompt syntax');
+    }
+
+    return { score: clamp01(score), hits };
+  }
+
   function pixelStyleScore(drawable) {
     try {
       const w = 64;
@@ -338,6 +381,7 @@
 
       let satSum = 0;
       let edgeSum = 0;
+      const bins = new Set();
       let count = 0;
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -351,11 +395,14 @@
             const j = (y * w + (x - 1)) * 4;
             edgeSum += Math.abs(r - data[j]) + Math.abs(g - data[j + 1]) + Math.abs(b - data[j + 2]);
           }
+          // 4-bit quantized colour bins (4096 max) as a crude palette-complexity proxy.
+          bins.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
           count++;
         }
       }
       const satMean = satSum / Math.max(1, count);
       const edgeMean = edgeSum / Math.max(1, count);
+      const paletteComplexity = bins.size;
 
       let score = 0;
       const hits = [];
@@ -363,6 +410,10 @@
       if (satMean > 0.48 && edgeMean > 48) {
         score += 0.18;
         hits.push('[ai] stylized frame');
+      }
+      if (paletteComplexity < 190 && edgeMean > 36) {
+        score += 0.14;
+        hits.push('[ai] quantized palette');
       }
       return { score: clamp01(score), hits };
     } catch {
@@ -372,10 +423,10 @@
 
   function aiMediaResult(score, hits) {
     return {
-      flagged: score >= 0.8,
+      flagged: score >= 0.78,
       needsFactCheck: false,
       score: parseFloat(score.toFixed(3)),
-      category: score >= 0.8 ? 'ai' : null,
+      category: score >= 0.78 ? 'ai' : null,
       topCategory: 'ai',
       scores: { slop: 0, ai: parseFloat(score.toFixed(3)), rage: 0, misinfo: 0 },
       hits,
@@ -387,43 +438,88 @@
 
     target.querySelectorAll('img,video').forEach((el) => {
       const attr = mediaAttrScore(el);
+      const ctx = mediaContextScore(target, el);
       let pixel = { score: 0, hits: [] };
       if (el.tagName === 'IMG' && el.complete && el.naturalWidth > 32 && el.naturalHeight > 32) {
         pixel = pixelStyleScore(el);
       }
-      const score = clamp01(attr.score + pixel.score);
-      if (score > best.score) best = { score, hits: [...attr.hits, ...pixel.hits] };
+      const score = clamp01(attr.score + ctx.score + pixel.score);
+      if (score > best.score) best = { score, hits: [...attr.hits, ...ctx.hits, ...pixel.hits] };
     });
 
     return aiMediaResult(best.score, best.hits);
   }
 
-  function evaluateVideoFirstFrame(target, video) {
-    if (seenMedia.has(video)) return;
-    seenMedia.add(video);
+  function mediaState(el) {
+    const current = mediaScanState.get(el) || { attempts: 0, done: false };
+    mediaScanState.set(el, current);
+    return current;
+  }
 
-    const run = () => {
-      if (!target.isConnected) return;
+  function evaluateVideoFirstFrame(target, video) {
+    const state = mediaState(video);
+    if (state.done || state.attempts >= 4) return;
+    state.attempts += 1;
+
+    const samples = [];
+    const sample = (tag) => {
       const attr = mediaAttrScore(video);
+      const ctx = mediaContextScore(target, video);
       const pixel = pixelStyleScore(video);
-      const score = clamp01(attr.score + pixel.score);
-      const result = aiMediaResult(score, [...attr.hits, ...pixel.hits, '[ai] video-frame-check']);
-      if (!result.flagged) return;
-      clearActionState(target);
-      upsertDebugEvalBadge(target, result);
-      processResult(target, result);
+      const score = clamp01(attr.score + ctx.score + pixel.score);
+      samples.push({ score, hits: [...attr.hits, ...ctx.hits, ...pixel.hits, tag] });
     };
 
-    const analyzeNow = () => {
-      // Use first frame for paused videos when seek is safe; do not disrupt playback.
-      if (video.paused && Number.isFinite(video.duration) && video.duration > 0.1 && video.currentTime > 0.1) {
-        const onSeeked = () => run();
-        video.addEventListener('seeked', onSeeked, { once: true });
-        try { video.currentTime = 0; } catch { run(); }
-        setTimeout(run, 700);
-      } else {
-        run();
+    const finalize = () => {
+      if (!target.isConnected) return;
+      const best = samples.reduce((a, b) => (b.score > a.score ? b : a), { score: 0, hits: [] });
+      const result = aiMediaResult(best.score, best.hits);
+      if (result.flagged) {
+        state.done = true;
+        clearActionState(target);
+        upsertDebugEvalBadge(target, result);
+        processResult(target, result);
+        return;
       }
+      // Retry later when more frames/metadata become available.
+      if (state.attempts < 4) {
+        setTimeout(() => evaluateVideoFirstFrame(target, video), 1200);
+      }
+    };
+
+    const sampleCurrent = () => sample('[ai] video-frame');
+
+    const analyzeNow = () => {
+      sampleCurrent();
+
+      // If paused, try a deterministic first-frame sample too.
+      if (video.paused && Number.isFinite(video.duration) && video.duration > 0.1 && video.currentTime > 0.1) {
+        const originalTime = video.currentTime;
+        const onSeeked = () => {
+          sample('[ai] video-first-frame');
+          try { video.currentTime = originalTime; } catch {}
+          finalize();
+        };
+        video.addEventListener('seeked', onSeeked, { once: true });
+        try {
+          video.currentTime = 0;
+          setTimeout(finalize, 800);
+          return;
+        } catch {
+          // fallback to current-frame only
+        }
+      }
+
+      // If playing, sample one more near-term frame if supported.
+      if (!video.paused && typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => {
+          sample('[ai] video-next-frame');
+          finalize();
+        });
+        return;
+      }
+
+      finalize();
     };
 
     if (video.readyState >= 2) analyzeNow();
@@ -928,7 +1024,7 @@
         processed = new WeakSet();
         lastScannedText = new WeakMap();
         queued = new WeakSet();
-        seenMedia = new WeakSet();
+        mediaScanState = new WeakMap();
         factIndex = 0;
 
         pendingQueue.length = 0;    // drop any in-flight queue
