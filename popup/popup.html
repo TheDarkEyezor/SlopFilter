@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SlopFilter</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <span class="logo">◉</span>
+    <h1>SlopFilter</h1>
+    <label class="master-toggle" title="Enable / Disable">
+      <input type="checkbox" id="masterToggle" />
+      <span class="slider"></span>
+    </label>
+  </header>
+
+  <div class="stats-bar">
+    <span id="removedCount">0</span> elements removed this page
+  </div>
+
+  <section class="modes">
+    <h2>Detection modes</h2>
+
+    <label class="mode-row" id="mode-slop">
+      <span class="mode-dot slop"></span>
+      <span class="mode-name">Slop &amp; Corporate Filler</span>
+      <input type="checkbox" data-mode="slop" />
+      <span class="slider"></span>
+    </label>
+
+    <label class="mode-row" id="mode-ai">
+      <span class="mode-dot ai"></span>
+      <span class="mode-name">AI-Generated Copy</span>
+      <input type="checkbox" data-mode="ai" />
+      <span class="slider"></span>
+    </label>
+
+    <label class="mode-row" id="mode-rage">
+      <span class="mode-dot rage"></span>
+      <span class="mode-name">Rage-bait &amp; Outrage</span>
+      <input type="checkbox" data-mode="rage" />
+      <span class="slider"></span>
+    </label>
+
+    <label class="mode-row" id="mode-misinfo">
+      <span class="mode-dot misinfo"></span>
+      <span class="mode-name">Misinformation</span>
+      <input type="checkbox" data-mode="misinfo" />
+      <span class="slider"></span>
+    </label>
+  </section>
+
+  <section class="fc-section">
+    <h2>Fact-check API <span class="optional-label">(optional)</span></h2>
+    <p class="fc-hint">
+      Enter a free
+      <a href="https://developers.google.com/fact-check/tools/api/reference/rest" target="_blank" rel="noopener">Google Fact Check Tools</a>
+      API key to get verdicts from PolitiFact, Snopes &amp; Reuters.
+      Leave blank to use Wikipedia context only.
+    </p>
+    <div class="fc-key-row">
+      <input type="password" id="fcApiKey" placeholder="AIza…" spellcheck="false" autocomplete="off" />
+      <button id="fcApiKeySave">Save</button>
+    </div>
+    <span id="fcApiKeySaved" class="fc-saved" hidden>Saved ✓</span>
+  </section>
+
+  <section class="debug-section">
+    <label class="mode-row">
+      <span class="mode-dot debug"></span>
+      <span class="mode-name">Highlight instead of remove</span>
+      <input type="checkbox" id="debugToggle" />
+      <span class="slider"></span>
+    </label>
+    <label class="mode-row">
+      <span class="mode-dot scan"></span>
+      <span class="mode-name">Show all scanned tweets</span>
+      <input type="checkbox" id="debugScanAllToggle" />
+      <span class="slider"></span>
+    </label>
+  </section>
+
+  <footer>
+    <button id="rescanBtn">↺ Re-scan page</button>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

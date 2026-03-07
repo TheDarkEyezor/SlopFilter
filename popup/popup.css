@@ -1,0 +1,244 @@
+/* popup.css — SlopFilter */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  background: #111;
+  color: #e8e8e8;
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.logo {
+  font-size: 18px;
+  color: #c0392b;
+  flex-shrink: 0;
+}
+
+h1 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  flex: 1;
+  color: #f0f0f0;
+}
+
+/* ── Stats bar ───────────────────────────────────────────────────────────── */
+.stats-bar {
+  padding: 7px 16px;
+  font-size: 11px;
+  color: #888;
+  background: #161616;
+  border-bottom: 1px solid #222;
+}
+
+#removedCount {
+  font-weight: 700;
+  color: #e74c3c;
+}
+
+/* ── Mode section ────────────────────────────────────────────────────────── */
+section.modes, section.debug-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+section.modes h2 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #555;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.mode-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.mode-row:hover { background: #1a1a1a; }
+
+.mode-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mode-dot.slop    { background: #e67e22; }
+.mode-dot.ai      { background: #3498db; }
+.mode-dot.rage    { background: #e74c3c; }
+.mode-dot.misinfo { background: #e8a020; }
+.mode-dot.debug   { background: #27ae60; }
+.mode-dot.scan    { background: #00c864; }
+
+.mode-name {
+  flex: 1;
+  font-size: 12px;
+  color: #ccc;
+}
+
+/* ── Disabled state ──────────────────────────────────────────────────────── */
+body.disabled .mode-row  { opacity: 0.35; pointer-events: none; }
+body.disabled .stats-bar { opacity: 0.5; }
+
+/* ── Toggle switch ───────────────────────────────────────────────────────── */
+.master-toggle,
+.mode-row {
+  position: relative;
+}
+
+.master-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.master-toggle input,
+.mode-row input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+}
+
+/* Generic slider (used both in header and mode rows) */
+.slider {
+  display: inline-block;
+  position: relative;
+  width: 34px; height: 18px;
+  background: #333;
+  border-radius: 34px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.slider::after {
+  content: '';
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 14px; height: 14px;
+  background: #666;
+  border-radius: 50%;
+  transition: transform 0.2s, background 0.2s;
+}
+
+input:checked + .slider,
+input:checked ~ .slider {
+  background: #c0392b;
+}
+
+input:checked + .slider::after,
+input:checked ~ .slider::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+footer {
+  padding: 10px 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+#rescanBtn {
+  background: transparent;
+  border: 1px solid #333;
+  color: #aaa;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#rescanBtn:hover {
+  border-color: #c0392b;
+  color: #e74c3c;
+}
+
+/* ── Fact-check API key section ──────────────────────────────────────────── */
+.fc-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e1e1e;
+}
+
+.fc-section h2 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #555;
+  margin-bottom: 6px;
+  padding-left: 4px;
+}
+
+.optional-label {
+  font-size: 9px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #444;
+  font-weight: 400;
+}
+
+.fc-hint {
+  font-size: 10.5px;
+  color: #666;
+  line-height: 1.5;
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.fc-hint a {
+  color: #5090c8;
+  text-decoration: none;
+}
+.fc-hint a:hover { text-decoration: underline; }
+
+.fc-key-row {
+  display: flex;
+  gap: 6px;
+  padding-left: 2px;
+}
+
+.fc-key-row input {
+  flex: 1;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #ddd;
+  font-size: 11px;
+  padding: 4px 8px;
+  outline: none;
+}
+.fc-key-row input:focus { border-color: #555; }
+
+.fc-key-row button {
+  background: transparent;
+  border: 1px solid #444;
+  color: #aaa;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.fc-key-row button:hover { border-color: #e8a020; color: #e8a020; }
+
+.fc-saved {
+  font-size: 10px;
+  color: #27ae60;
+  margin-left: 6px;
+}

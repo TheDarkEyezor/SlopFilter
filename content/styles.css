@@ -1,0 +1,214 @@
+/**
+ * styles.css — SlopFilter
+ *
+ * Debug highlight styles only — production mode removes nodes entirely.
+ * Import order: injected BEFORE page CSS so specificity can be overridden by page.
+ */
+
+/* ── Debug mode: PROMINENT highlight flagged elements ────────────────────── */
+/* Designed to be obvious on both Twitter dark mode and light backgrounds.    */
+
+[data-slopfilter] {
+  position: relative !important;
+  border-left: 5px solid rgba(255, 80, 80, 0.95) !important;
+  background-color: rgba(255, 80, 80, 0.18) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 80, 80, 0.4), 0 0 0 1px rgba(255, 80, 80, 0.3) !important;
+  border-radius: 4px !important;
+  opacity: 1 !important;
+}
+
+/* Category-specific colors */
+[data-slopfilter="slop"] {
+  border-left-color: rgba(255, 145, 0, 0.95) !important;
+  background-color:  rgba(255, 145, 0, 0.18) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 145, 0, 0.4), 0 0 0 1px rgba(255, 145, 0, 0.3) !important;
+}
+[data-slopfilter="ai"] {
+  border-left-color: rgba(70, 130, 255, 0.95) !important;
+  background-color:  rgba(70, 130, 255, 0.18) !important;
+  box-shadow: inset 0 0 0 1px rgba(70, 130, 255, 0.4), 0 0 0 1px rgba(70, 130, 255, 0.3) !important;
+}
+[data-slopfilter="rage"] {
+  border-left-color: rgba(220, 30, 30, 0.95) !important;
+  background-color:  rgba(220, 30, 30, 0.18) !important;
+  box-shadow: inset 0 0 0 1px rgba(220, 30, 30, 0.4), 0 0 0 1px rgba(220, 30, 30, 0.3) !important;
+}
+[data-slopfilter="misinfo"] {
+  border-left-color: rgba(230, 160, 0, 0.95) !important;
+  background-color:  rgba(230, 160, 0, 0.12) !important;
+  box-shadow: inset 0 0 0 1px rgba(230, 160, 0, 0.4), 0 0 0 1px rgba(230, 160, 0, 0.3) !important;
+}
+
+/* Category badge — top-left, bold, always visible */
+[data-slopfilter]:not([data-slopfilter="misinfo"])::before {
+  content: "🚫 " attr(data-slopfilter) "  (" attr(data-slopfilter-score) ")";
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  font: 700 11px/1.5 -apple-system, BlinkMacSystemFont, monospace;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.82);
+  padding: 2px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 2147483647;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+/* ── debugScanAll: thin green outline on every scanned element ────────────── */
+/* Shows you exactly what the selector is touching, flagged or not.            */
+[data-slopfilter-scanned]:not([data-slopfilter]) {
+  outline: 2px solid rgba(0, 200, 100, 0.6) !important;
+  outline-offset: -2px !important;
+}
+[data-slopfilter-scanned]:not([data-slopfilter])::after {
+  content: "👁 scanned";
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font: 600 9px/1.4 monospace;
+  color: rgba(0, 200, 100, 0.9);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 2147483647;
+  white-space: nowrap;
+}
+
+/* ── Misinfo: blur-until-verified treatment ──────────────────────────────── */
+/* Text obscuring: makes text unreadable while keeping layout intact.         */
+/* The injected .sf-misinfo-badge child explicitly overrides these with       */
+/* !important, so it stays fully visible despite inheriting "color".          */
+
+[data-slopfilter="misinfo"].slopfilter-fc-pending {
+  color: transparent !important;
+  text-shadow: 0 0 11px rgba(80, 60, 0, 0.65) !important;
+  user-select: none !important;
+  cursor: default !important;
+}
+
+/* dim any images/media inside the pending post */
+[data-slopfilter="misinfo"].slopfilter-fc-pending img,
+[data-slopfilter="misinfo"].slopfilter-fc-pending video,
+[data-slopfilter="misinfo"].slopfilter-fc-pending [style*="background-image"] {
+  opacity: 0.07 !important;
+  transition: opacity 0.3s;
+}
+
+/* once revealed, restore everything immediately */
+[data-slopfilter="misinfo"].slopfilter-fc-revealed {
+  color: inherit !important;
+  text-shadow: none !important;
+  user-select: auto !important;
+}
+[data-slopfilter="misinfo"].slopfilter-fc-revealed img,
+[data-slopfilter="misinfo"].slopfilter-fc-revealed video {
+  opacity: 1 !important;
+}
+
+/* ── Fact-check badge ────────────────────────────────────────────────────── */
+/* Injected as a direct child of the flagged element by content.js.           */
+/* Must explicitly reset every property that the parent might poison.         */
+
+.sf-fc-badge {
+  /* Hard reset so parent's color:transparent / text-shadow can't bleed in */
+  all: initial;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2147483646 !important;
+  /* Visual */
+  background: rgba(18, 14, 6, 0.91) !important;
+  border: 1px solid rgba(230, 160, 0, 0.55) !important;
+  border-radius: 8px !important;
+  padding: 7px 12px !important;
+  max-width: 320px !important;
+  min-width: 180px !important;
+  /* Typography — explicit, not inherited */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  color: #f0e8c8 !important;
+  text-shadow: none !important;
+  text-align: center !important;
+  cursor: default !important;
+  white-space: normal !important;
+  pointer-events: auto !important;
+}
+
+/* Spinner (CSS-only rotation) */
+.sf-fc-spinner {
+  display: inline-block !important;
+  width: 12px !important;
+  height: 12px !important;
+  border: 2px solid rgba(230, 160, 0, 0.3) !important;
+  border-top-color: rgba(230, 160, 0, 1) !important;
+  border-radius: 50% !important;
+  animation: sf-spin 0.8s linear infinite !important;
+  flex-shrink: 0 !important;
+}
+@keyframes sf-spin { to { transform: rotate(360deg); } }
+
+/* Verdict-specific badge colours */
+.sf-fc-badge[data-verdict="false"],
+.sf-fc-badge[data-verdict="FALSE"],
+.sf-fc-badge[data-verdict="Pants on Fire"] {
+  border-color: rgba(220, 60, 60, 0.7) !important;
+  color: #ffd0d0 !important;
+}
+.sf-fc-badge[data-verdict="true"],
+.sf-fc-badge[data-verdict="TRUE"],
+.sf-fc-badge[data-verdict="Mostly True"] {
+  border-color: rgba(60, 180, 60, 0.7) !important;
+  color: #d0ffd8 !important;
+}
+.sf-fc-badge[data-verdict="context"] {
+  border-color: rgba(80, 150, 230, 0.7) !important;
+  color: #d0e8ff !important;
+}
+
+/* Show-anyway link inside the badge */
+.sf-fc-show {
+  all: initial !important;
+  display: inline !important;
+  color: rgba(230, 160, 0, 0.85) !important;
+  font-size: 11px !important;
+  font-family: inherit !important;
+  text-decoration: underline !important;
+  cursor: pointer !important;
+  margin-left: 6px !important;
+}
+.sf-fc-show:hover { color: rgb(230, 160, 0) !important; }
+
+/* Summary text (hidden by default, shown on hover) */
+.sf-fc-summary {
+  all: initial !important;
+  display: none !important;
+  margin-top: 5px !important;
+  font-size: 11px !important;
+  font-family: inherit !important;
+  color: #c8c0a8 !important;
+  line-height: 1.45 !important;
+  text-align: left !important;
+  max-width: 300px !important;
+}
+.sf-fc-badge:hover .sf-fc-summary {
+  display: block !important;
+}
+.sf-fc-source-link {
+  all: initial !important;
+  display: inline !important;
+  color: rgba(150, 180, 230, 0.9) !important;
+  font-size: 10px !important;
+  font-family: inherit !important;
+  text-decoration: underline !important;
+  cursor: pointer !important;
+}
