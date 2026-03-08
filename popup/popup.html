@@ -52,6 +52,22 @@
     </label>
   </section>
 
+  <section class="sites">
+    <h2>Sites</h2>
+    <label class="mode-row" id="site-twitter">
+      <span class="mode-dot scan"></span>
+      <span class="mode-name">X / Twitter</span>
+      <input type="checkbox" data-site="twitter" />
+      <span class="slider"></span>
+    </label>
+    <label class="mode-row" id="site-linkedin">
+      <span class="mode-dot scan"></span>
+      <span class="mode-name">LinkedIn</span>
+      <input type="checkbox" data-site="linkedin" />
+      <span class="slider"></span>
+    </label>
+  </section>
+
   <section class="fc-section">
     <h2>Fact-check API <span class="optional-label">(optional)</span></h2>
     <p class="fc-hint">
@@ -76,7 +92,7 @@
     </label>
     <label class="mode-row">
       <span class="mode-dot scan"></span>
-      <span class="mode-name">Show all scanned tweets</span>
+      <span class="mode-name">Show all scanned posts</span>
       <input type="checkbox" id="debugScanAllToggle" />
       <span class="slider"></span>
     </label>
@@ -87,6 +103,16 @@
     <div class="replace-options">
       <label class="replace-opt"><input type="radio" name="replacementMode" value="off" /><span>Remove (none)</span></label>
       <label class="replace-opt"><input type="radio" name="replacementMode" value="fun_facts" /><span>✨ Fun facts</span></label>
+    </div>
+    <div class="fact-categories" id="factCategories">
+      <label class="fact-cat"><input type="checkbox" data-fact-category="all" /><span>All</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="science" /><span>Science</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="space" /><span>Space</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="animals" /><span>Animals</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="history" /><span>History</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="math" /><span>Math</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="technology" /><span>Technology</span></label>
+      <label class="fact-cat"><input type="checkbox" data-fact-category="earth" /><span>Earth</span></label>
     </div>
   </section>
 

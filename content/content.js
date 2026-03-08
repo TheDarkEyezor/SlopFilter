@@ -16,6 +16,7 @@
   // ─── GUARD: injected twice? bail. ─────────────────────────────────────────────
   if (window.__slopFilterActive) return;
   window.__slopFilterActive = true;
+  if (!/^(twitter|x)\.com$/.test(location.hostname) && !/(^|\.)linkedin\.com$/.test(location.hostname)) return;
 
   // ─── STATE ─────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,8 @@
   let queued = new WeakSet();
   /** Media scan state to support retries for videos as frames load over time. */
   let mediaScanState = new WeakMap();
+  /** Prevent repeated delayed video probe loops per target. */
+  const mediaProbeState = new WeakMap();
 
   /** Removed element count, for popup badge (DOM-layer + network-layer combined). */
   let removedCount = 0;
@@ -34,19 +37,49 @@
   /** Pending fact-check requests: fcId → element. Cleaned up when result arrives. */
   const pendingFactChecks = new Map();
   let fcIdCounter = 0;
+  /** Placeholder restore map for undo action. */
+  const placeholderRestore = new Map();
+  let placeholderIdCounter = 0;
 
   /** User settings — loaded once then cached. */
   let settings = {
     enabled: true,
     modes: { slop: true, ai: true, rage: true, misinfo: true },
+    siteModes: { twitter: true, linkedin: true },
     debugHighlight: false,   // highlight flagged elements instead of removing
     debugScanAll:   false,   // outline EVERY scanned element (even if not flagged)
     minTextLength: 40,       // ignore elements shorter than this
     replacementMode: 'off',  // 'off' | 'fun_facts'
+    factCategories: ['all'],
   };
 
   function normalizeReplacementMode(mode) {
     return mode === 'fun_facts' ? 'fun_facts' : 'off';
+  }
+
+  const FACT_CATEGORIES = ['science', 'space', 'animals', 'history', 'math', 'technology', 'earth'];
+  const MAX_VIDEO_SAMPLE_ATTEMPTS = 4;
+  const MAX_VIDEO_PROBE_TICKS = 5;
+  function normalizeFactCategories(categories) {
+    if (!Array.isArray(categories) || categories.length === 0) return ['all'];
+    const cleaned = categories
+      .map(c => String(c || '').trim().toLowerCase())
+      .filter(c => c === 'all' || FACT_CATEGORIES.includes(c));
+    if (cleaned.length === 0) return ['all'];
+    if (cleaned.includes('all')) return ['all'];
+    return Array.from(new Set(cleaned));
+  }
+
+  function currentSiteKey() {
+    if (/^(twitter|x)\.com$/.test(location.hostname)) return 'twitter';
+    if (/(^|\.)linkedin\.com$/.test(location.hostname)) return 'linkedin';
+    return null;
+  }
+
+  function isCurrentSiteEnabled() {
+    const key = currentSiteKey();
+    if (!key) return false;
+    return settings.siteModes?.[key] !== false;
   }
 
   // ─── TWITTER SKIP ZONES ──────────────────────────────────────────────────────
@@ -69,29 +102,72 @@
     '[data-testid="TopNavBar"]',
   ].join(',');
 
+  // LinkedIn: primary selector targets stable data-urn / data-id attributes set by LinkedIn's
+  // own infrastructure. These survive class-name obfuscation across deploys.
+  // Class names (.feed-shared-update-v2 etc.) are kept as fallbacks but are secondary.
   const LINKEDIN_POST_SELECTOR = [
-    '.feed-shared-update-v2',
+    '[data-urn*="urn:li:activity"]',      // most common: feed post containers
+    '[data-urn*="urn:li:aggregate"]',     // aggregated / reshared posts
+    '[data-id^="urn:li:activity"]',        // alternate attribute form
+    '[data-id*="urn:li:activity"]',
+    '[data-activity-urn]',
+    '.feed-shared-update-v2',              // legacy class fallback
     '.occludable-update',
-    '[data-id^="urn:li:activity"]',
-    '[data-urn*="urn:li:activity"]',
-    '[data-view-name*="feed-update"]',
   ].join(',');
 
+  // LinkedIn text: class-based best-effort. Used only for text extraction priority,
+  // NOT for filtering which posts to scan.
   const LINKEDIN_TEXT_SELECTOR = [
-    '.feed-shared-inline-show-more-text',
-    '.update-components-text',
+    '[class*="update-components-text"]',
+    '[class*="feed-shared-inline-show-more-text"]',
+    '[class*="commentary"]',
     '.break-words',
+    'span[dir="ltr"]',
   ].join(',');
 
-  const AI_MEDIA_RE = /\b(ai[- ]?(generated|image|art)|generated\s+with|synthetic\s+media|deepfake|midjourney|dall[- ]?e|stable\s+diffusion|grok|sora|ideogram|runway|firefly|flux)\b/i;
+  // What we ask the DOM to give us: the POST CONTAINERS (like Twitter's tweet card).
+  // We scan the container, extract text from within it — same model as Twitter.
+  const LINKEDIN_FEED_SCAN_SELECTOR = LINKEDIN_POST_SELECTOR;
+
+  function activeCandidateSelector() {
+    if (/^(twitter|x)\.com$/.test(location.hostname)) {
+      return '[data-testid="tweetText"],[data-testid="tweet"]';
+    }
+    if (/(^|\.)linkedin\.com$/.test(location.hostname)) {
+      return LINKEDIN_FEED_SCAN_SELECTOR;
+    }
+    return CANDIDATE_SELECTOR;
+  }
+
+  const LINKEDIN_SKIP_SELECTOR = [
+    'header',
+    'nav',
+    'aside',
+    '.global-nav',
+    '.global-nav__content',
+    '.global-footer',
+    '.scaffold-layout__header',
+    '.scaffold-layout__aside',
+    '.scaffold-layout-toolbar',
+    '.feed-identity-module',
+    '.ad-banner-container',
+    '.msg-overlay-list-bubble',
+  ].join(',');
+
+  const AI_MEDIA_RE = /\b(ai[- ]?(generated|image|art|modified|enhanced|edited)|generated\s+with|edited\s+with|enhanced\s+with|synthetic\s+media|deepfake|midjourney|dall[- ]?e|stable\s+diffusion|grok|sora|ideogram|runway|firefly|flux|faceswap|face\s*swap)\b/i;
   const AI_MODEL_TOKEN_RE = /\b(midjourney|dall[- ]?e|stable\s+diffusion|sdxl|flux|grok|sora|ideogram|runway|firefly|kling|gen[- ]?ai|deepfake)\b/gi;
   const AI_PROMPT_TOKEN_RE = /\b(prompt|negative\s+prompt|cfg|seed|sampler|steps|stylize|ar|aspect\s+ratio)\b|--(ar|v|stylize|seed)\b/gi;
+  const AI_WATERMARK_RE = /\b(midjourney|dall[- ]?e|stable\s*diffusion|sdxl|grok|ideogram|runway|firefly|flux|faceswap)\b/i;
 
   /** Returns true if this element lives inside a skip zone on Twitter. */
   function inSkipZone(el) {
-    // Only apply skip zones on Twitter — other sites don't have these selectors.
-    if (!/^(twitter|x)\.com$/.test(location.hostname)) return false;
-    return Boolean(el.closest(TWITTER_SKIP_SELECTOR));
+    if (/^(twitter|x)\.com$/.test(location.hostname)) {
+      return Boolean(el.closest(TWITTER_SKIP_SELECTOR));
+    }
+    if (/(^|\.)linkedin\.com$/.test(location.hostname)) {
+      return Boolean(el.closest(LINKEDIN_SKIP_SELECTOR));
+    }
+    return false;
   }
 
   // ─── CSS SELECTORS FOR CANDIDATE ELEMENTS ─────────────────────────────────────
@@ -112,6 +188,10 @@
     '[data-urn*="urn:li:activity"]',
     '.feed-shared-inline-show-more-text',
     '.update-components-text',
+    '.msg-s-message-list__event',
+    '.msg-s-event-listitem',
+    '.msg-s-event-listitem__body',
+    '.comments-comment-item',
     'article', 'section', 'main',
     'p', 'blockquote',
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -132,12 +212,36 @@
    * The element contains only the tweet body — no username, timestamp, or
    * metric numbers — so no cleaning needed and no clone overhead.
    *
+   * For LinkedIn: prefer extracting from inner text containers to avoid metadata noise.
+   *
    * For everything else: clone, strip noise elements, collapse whitespace.
    */
   function extractText(el) {
     if (el.dataset?.testid === 'tweetText') {
       return (el.textContent || '').replace(/\s+/g, ' ').trim();
     }
+
+    const isLinkedIn = /(^|\.)linkedin\.com$/.test(location.hostname);
+    if (isLinkedIn) {
+      // Mirror Twitter: we receive the POST CONTAINER. Extract text from the
+      // best text-bearing child, stripping chrome (reactions, timestamps, author metadata).
+      const clone = el.cloneNode(true);
+      // Strip non-content chrome
+      clone.querySelectorAll(
+        'script, style, noscript, iframe, button, svg, img, video,' +
+        '[class*="social-action"], [class*="reactions"], [class*="social-count"],' +
+        '[class*="actor"], [class*="attribution"], [class*="timestamp"],' +
+        'time, [aria-label*="Like"], [aria-label*="Comment"], [aria-label*="Repost"], [aria-label*="Send"]'
+      ).forEach(n => n.remove());
+      // Try to find the narrowest text element first
+      const textEl = clone.querySelector(LINKEDIN_TEXT_SELECTOR);
+      if (textEl) {
+        return (textEl.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      // Fall back to cleaned container text
+      return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
     const clone = el.cloneNode(true);
     clone.querySelectorAll('script, style, noscript, iframe').forEach(n => n.remove());
     return (clone.textContent || '').replace(/\s+/g, ' ').trim();
@@ -178,7 +282,21 @@
     }
 
     if (isLinkedIn) {
-      return el.closest(LINKEDIN_POST_SELECTOR) || null;
+      // We scan the POST CONTAINER directly (same as Twitter scanning the tweet card).
+      // The element itself IS the action target. But if we were handed a child element,
+      // walk up to the nearest post container.
+      if (el.matches(LINKEDIN_POST_SELECTOR)) return el;
+      const container = el.closest(LINKEDIN_POST_SELECTOR);
+      if (container) return container;
+      // Last resort: walk up looking for any element with an activity URN attribute
+      let node = el.parentElement;
+      while (node && node !== document.body) {
+        const urn = node.getAttribute('data-urn') || node.getAttribute('data-id') || node.getAttribute('data-activity-urn');
+        if (urn && (urn.includes('activity') || urn.includes('urn:li:'))) return node;
+        if (node.matches('main,[role="main"],.scaffold-finite-scroll__content')) break;
+        node = node.parentElement;
+      }
+      return null;
     }
 
     return el;
@@ -233,6 +351,22 @@
 
   // Delegated click handler for "show anyway" / "hide post" links
   document.addEventListener('click', (e) => {
+    const undo = e.target.closest('[data-sf-undo]');
+    if (undo) {
+      e.stopPropagation();
+      e.preventDefault();
+      const id = undo.getAttribute('data-sf-undo');
+      const entry = placeholderRestore.get(id);
+      const ph = document.querySelector(`.sf-placeholder[data-sf-id="${id}"]`);
+      if (entry?.original && ph && ph.isConnected) {
+        ph.replaceWith(entry.original);
+        placeholderRestore.delete(id);
+        removedCount = Math.max(0, removedCount - 1);
+        chrome.runtime.sendMessage({ type: 'STATS_UPDATE', removedCount }).catch(() => {});
+      }
+      return;
+    }
+
     const link = e.target.closest('[data-fc-show]');
     if (!link) return;
     e.stopPropagation();
@@ -317,6 +451,11 @@
       hits.push('[ai] media marker');
     }
 
+    if (/(generated[-_ ]?by|ai[-_ ]?art|ai[-_ ]?generated|midjourney|dall[-_ ]?e|stable[-_ ]?diffusion|faceswap|deepfake)/i.test(fields)) {
+      score += 0.25;
+      hits.push('[ai] source watermark');
+    }
+
     const hintMatches = (fields.match(/\b(ai|generated|synthetic|midjourney|dall|grok|sora|diffusion|deepfake)\b/gi) || []).length;
     if (hintMatches >= 2) {
       score += 0.2;
@@ -358,6 +497,11 @@
       hits.push('[ai] multi-model token');
     }
 
+    if (AI_WATERMARK_RE.test(nearby) && /\b(edited|enhanced|upscaled|restored|faceswap|remixed)\b/i.test(nearby)) {
+      score += 0.25;
+      hits.push('[ai] modified media');
+    }
+
     const promptMatches = (nearby.match(AI_PROMPT_TOKEN_RE) || []).length;
     if (promptMatches >= 2) {
       score += 0.25;
@@ -381,7 +525,20 @@
 
       let satSum = 0;
       let edgeSum = 0;
+      let clipped = 0;
       const bins = new Set();
+      let blockBoundaryDiff = 0;
+      let nonBoundaryDiff = 0;
+      let boundaryCount = 0;
+      let nonBoundaryCount = 0;
+      let rgNum = 0;
+      let rbNum = 0;
+      let gNum = 0;
+      let rNum = 0;
+      let bNum = 0;
+      let ggNum = 0;
+      let rrNum = 0;
+      let bbNum = 0;
       let count = 0;
       for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
@@ -391,9 +548,28 @@
           const min = Math.min(r, g, b);
           const sat = max === 0 ? 0 : (max - min) / max;
           satSum += sat;
+          if (r <= 2 || r >= 253 || g <= 2 || g >= 253 || b <= 2 || b >= 253) clipped++;
+
+          rgNum += r * g;
+          rbNum += r * b;
+          rNum += r;
+          gNum += g;
+          bNum += b;
+          rrNum += r * r;
+          ggNum += g * g;
+          bbNum += b * b;
+
           if (x > 0) {
             const j = (y * w + (x - 1)) * 4;
-            edgeSum += Math.abs(r - data[j]) + Math.abs(g - data[j + 1]) + Math.abs(b - data[j + 2]);
+            const diff = Math.abs(r - data[j]) + Math.abs(g - data[j + 1]) + Math.abs(b - data[j + 2]);
+            edgeSum += diff;
+            if (x % 8 === 0) {
+              blockBoundaryDiff += diff;
+              boundaryCount++;
+            } else {
+              nonBoundaryDiff += diff;
+              nonBoundaryCount++;
+            }
           }
           // 4-bit quantized colour bins (4096 max) as a crude palette-complexity proxy.
           bins.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
@@ -403,6 +579,15 @@
       const satMean = satSum / Math.max(1, count);
       const edgeMean = edgeSum / Math.max(1, count);
       const paletteComplexity = bins.size;
+      const clippedRatio = clipped / Math.max(1, count);
+      const boundaryMean = blockBoundaryDiff / Math.max(1, boundaryCount);
+      const nonBoundaryMean = nonBoundaryDiff / Math.max(1, nonBoundaryCount);
+      const blockiness = boundaryMean > 0 ? Math.max(0, (boundaryMean - nonBoundaryMean) / boundaryMean) : 0;
+      const rgCorr = (rgNum - (rNum * gNum / count)) /
+        Math.sqrt(Math.max(1e-6, (rrNum - (rNum * rNum / count)) * (ggNum - (gNum * gNum / count))));
+      const rbCorr = (rbNum - (rNum * bNum / count)) /
+        Math.sqrt(Math.max(1e-6, (rrNum - (rNum * rNum / count)) * (bbNum - (bNum * bNum / count))));
+      const channelCorr = Math.max(rgCorr, rbCorr);
 
       let score = 0;
       const hits = [];
@@ -415,6 +600,34 @@
         score += 0.14;
         hits.push('[ai] quantized palette');
       }
+      if (blockiness > 0.22) {
+        score += 0.2;
+        hits.push('[ai] compression-like blockiness');
+      }
+      if (clippedRatio > 0.24 && satMean > 0.35) {
+        score += 0.12;
+        hits.push('[ai] clipped color channels');
+      }
+      if (channelCorr > 0.97 && edgeMean > 34) {
+        score += 0.16;
+        hits.push('[ai] high channel correlation');
+      }
+
+      // Fast probabilistic blending from pixel features.
+      const z =
+        (satMean - 0.44) * 2.8 +
+        (edgeMean - 42) * 0.025 +
+        (0.22 - Math.min(0.22, paletteComplexity / 1000)) * 2.2 +
+        blockiness * 2.4 +
+        clippedRatio * 1.6 +
+        Math.max(0, channelCorr - 0.94) * 6.5 -
+        1.95;
+      const p = 1 / (1 + Math.exp(-z));
+      if (p >= 0.72) {
+        score += Math.min(0.26, (p - 0.72) * 0.55);
+        hits.push(`[ai] pixel-prob:${p.toFixed(2)}`);
+      }
+
       return { score: clamp01(score), hits };
     } catch {
       return { score: 0, hits: [] };
@@ -458,7 +671,7 @@
 
   function evaluateVideoFirstFrame(target, video) {
     const state = mediaState(video);
-    if (state.done || state.attempts >= 4) return;
+    if (state.done || state.attempts >= MAX_VIDEO_SAMPLE_ATTEMPTS) return;
     state.attempts += 1;
 
     const samples = [];
@@ -482,7 +695,7 @@
         return;
       }
       // Retry later when more frames/metadata become available.
-      if (state.attempts < 4) {
+      if (state.attempts < MAX_VIDEO_SAMPLE_ATTEMPTS) {
         setTimeout(() => evaluateVideoFirstFrame(target, video), 1200);
       }
     };
@@ -526,92 +739,111 @@
     else video.addEventListener('loadeddata', analyzeNow, { once: true });
   }
 
+  function scheduleVideoProbes(target) {
+    const st = mediaProbeState.get(target);
+    if (st?.active) return;
+    mediaProbeState.set(target, { active: true, remaining: MAX_VIDEO_PROBE_TICKS });
+
+    const tick = () => {
+      const cur = mediaProbeState.get(target);
+      if (!cur || !target.isConnected || cur.remaining <= 0) {
+        mediaProbeState.delete(target);
+        return;
+      }
+      cur.remaining -= 1;
+      target.querySelectorAll('video').forEach(v => evaluateVideoFirstFrame(target, v));
+      setTimeout(tick, 900);
+    };
+    setTimeout(tick, 120);
+  }
+
   // ─── REPLACEMENT FACTS DATABASE ──────────────────────────────────────────────
-
-  const FUN_FACTS = [
-      "A teaspoon of neutron star material weighs about 10 million tonnes.",
-      "Honey never spoils. 3,000-year-old honey found in Egyptian tombs was still edible.",
-      "The human brain uses ~20% of the body's energy despite being only 2% of its weight.",
-      "Water can boil and freeze simultaneously — it's called the triple point.",
-      "There are more possible chess games than atoms in the observable universe.",
-      "Bananas are berries. Strawberries are not.",
-      "Octopuses have three hearts, blue blood, and can edit their own RNA.",
-      "Crows can recognise human faces and hold grudges across years.",
-      "Tardigrades survive vacuum, radiation, and temperatures near absolute zero.",
-      "Light takes 8 minutes from Sun to Earth — but ~100,000 years to escape the Sun's core.",
-      "Glass is technically a supercooled liquid — old window panes are thicker at the bottom.",
-      "A human sneeze travels at ~160 km/h and can project droplets up to 8 metres.",
-      "The total length of DNA in one human body, if uncoiled, would reach the Sun and back 300 times.",
-      "Mantis shrimps can see 16 colour channels. Humans see 3.",
-      "There are more microbial cells in your body than human cells.",
-      "There are more stars in the observable universe than grains of sand on all Earth's beaches.",
-      "A day on Venus is longer than a year on Venus.",
-      "Apollo astronaut footprints on the Moon will remain for at least 100 million years.",
-      "Neutron stars can spin up to 700 times per second.",
-      "The Milky Way and Andromeda galaxies will collide in about 4.5 billion years.",
-      "Space is completely silent — there is no medium for sound waves.",
-      "Saturn's rings span 282,000 km but are only ~10 metres thick on average.",
-      "The Sun accounts for 99.86% of the mass of our entire solar system.",
-      "Remove all atomic empty space from humans — all of humanity fits in a sugar cube.",
-      "The James Webb Telescope is sensitive enough to detect the heat of a bumblebee on the Moon.",
-      "Mars has the tallest volcano in the solar system: Olympus Mons, ~22 km high.",
-      "Light from the most distant quasar takes 13 billion years to reach us.",
-      "The ISS orbits Earth every 90 minutes at ~28,000 km/h.",
+  const FALLBACK_FACTS = {
+    science: [
+      "Honey never spoils; archaeologists found edible honey in ancient tombs.",
+      "The human brain uses around 20% of the body's energy.",
+      "Water can boil and freeze at the same time at the triple point.",
+      "Tardigrades can survive vacuum, radiation, and extreme temperatures.",
+    ],
+    space: [
+      "Light from the Sun takes about 8 minutes to reach Earth.",
+      "A day on Venus is longer than a Venus year.",
+      "The ISS circles Earth roughly every 90 minutes.",
       "One million Earths could fit inside the Sun.",
-      "Black holes don't 'suck' — objects must cross the event horizon to be captured.",
-      "Elephants are the only animals known to have death rituals — they mourn their dead.",
-      "A mantis shrimp punch clocks at 80 km/h — fast enough to boil water momentarily.",
-      "Sea otters hold hands while sleeping so they don't drift apart.",
-      "Dolphins have names for each other: unique signature whistles from birth.",
-      "Pistol shrimps snap their claws faster than a bullet, creating a plasma shockwave.",
-      "Sharks are older than trees — sharks 450 million years ago, trees ~350 million.",
-      "Cuttlefish can change colour and pattern despite being completely colour-blind.",
-      "A flock of starlings is a murmuration — each bird follows just three simple local rules.",
-      "Goats have rectangular pupils giving them a near-360° field of vision.",
+    ],
+    animals: [
+      "Octopuses have three hearts and can edit their own RNA.",
+      "Sea otters hold hands while sleeping so they do not drift apart.",
       "Butterflies taste with their feet.",
-      "Sloths host entire ecosystems — algae, moths, and beetles — in their fur.",
-      "An octopus's arms each have their own mini-brain and can act independently.",
-      "Crows pass tests designed for seven-year-old children, including delayed gratification.",
       "A group of owls is called a parliament.",
-      "Koko the gorilla learned over 1,000 signs in American Sign Language.",
-      "The Great Fire of London (1666) only killed six people, but destroyed 13,200 houses.",
-      "Cleopatra lived closer in time to the Moon landing than to the building of the Great Pyramid.",
-      "Oxford University is older than the Aztec Empire.",
-      "The shortest war in history lasted ~40 minutes: the Anglo-Zanzibar War of 1896.",
-      "Napoleon was once attacked by a horde of rabbits.",
-      "When the pyramids were built, woolly mammoths were still alive on Wrangel Island.",
-      "Abraham Lincoln was a licensed wrestler — and nearly undefeated.",
-      "The original Olympic Games lasted over 1,200 years before being abolished in 393 AD.",
-      "Beethoven was almost entirely deaf when he composed his Ninth Symphony.",
-      "Nintendo was founded in 1889 — as a playing-card company.",
-      "The word 'salary' comes from the Latin 'salarium' — soldiers were sometimes paid in salt.",
-      "In 1923, jockey Frank Hayes won a race despite dying of a heart attack mid-race.",
-      "Ancient Romans used urine as mouthwash — the ammonia whitened teeth.",
-      "Vikings used the mineral iolite as a polarising filter to navigate on overcast days.",
-      "Hannibal crossed the Alps with 37 war elephants. Only one survived the journey.",
-      "There are infinitely many infinities — and they're not all the same size.",
-      "A Möbius strip has only one side and one edge.",
-      "If you shuffle a deck of cards, the order has almost certainly never existed before.",
-      "In a group of 23 people, there's a >50% chance two share a birthday (birthday paradox).",
-      "e^(iπ) + 1 = 0 — five of maths' most fundamental constants in one equation.",
-      "The number 1 is not considered prime — to preserve unique prime factorisation.",
-      "Pi has been calculated to 105 trillion digits. No repeating pattern has been found.",
-      "Benford's Law: ~30% of numbers in real-world data sets start with the digit 1.",
-      "There exist true statements that are unprovable in any consistent formal system (Gödel).",
-      "You cannot comb a hairy ball flat without a cowlick — the Hairy Ball Theorem.",
-      "The Collatz conjecture is simple to state. No one has proven it in 87 years.",
-      "The Monty Hall problem: you should always switch doors. Most people's instinct is wrong.",
-      "1729 is the smallest number expressible as the sum of two cubes in two different ways.",
-      "Every even number > 2 is the sum of two primes — probably. (Goldbach's Conjecture, unproven.)",
-      "A 4-D sphere passing through 3-D space would appear as a point, grow into a sphere, then shrink back.",
-  ];
+    ],
+    history: [
+      "Cleopatra lived closer to the Moon landing than to the Great Pyramid era.",
+      "Oxford University predates the Aztec Empire.",
+      "Nintendo started in 1889 as a playing-card company.",
+      "The shortest recorded war lasted about 40 minutes.",
+    ],
+    math: [
+      "If you shuffle a deck of cards, that exact order is likely brand new.",
+      "In a group of 23 people, two sharing a birthday is more likely than not.",
+      "A Mobius strip has one side and one edge.",
+      "1729 is the smallest number expressible as two sums of two cubes.",
+    ],
+    technology: [
+      "The first computer bug was a real moth found in a relay.",
+      "The Apollo Guidance Computer had less memory than a modern calculator.",
+      "The first 1 GB hard drive weighed over 500 pounds.",
+      "Email predates the World Wide Web by about two decades.",
+    ],
+    earth: [
+      "Earth's tectonic plates move about as fast as fingernails grow.",
+      "More freshwater is locked in glaciers than in all rivers and lakes combined.",
+      "The Amazon rainforest helps generate much of its own rainfall.",
+      "The deepest ocean trench is deeper than Mount Everest is tall.",
+    ],
+  };
 
+  let factBank = { ...FALLBACK_FACTS };
+  let factPool = [];
   let factIndex = 0;
 
+  function rebuildFactPool() {
+    const selected = normalizeFactCategories(settings.factCategories);
+    if (selected.includes('all')) {
+      factPool = Object.values(factBank).flat();
+      return;
+    }
+    factPool = selected.flatMap(c => factBank[c] || []);
+    if (factPool.length === 0) factPool = Object.values(factBank).flat();
+  }
+
+  async function loadFactBank() {
+    try {
+      const url = chrome.runtime.getURL('content/facts.json');
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || typeof data !== 'object') return;
+      const next = {};
+      for (const c of FACT_CATEGORIES) {
+        if (Array.isArray(data[c])) {
+          next[c] = data[c].map(v => String(v || '').trim()).filter(Boolean);
+        }
+      }
+      if (Object.values(next).some(arr => arr.length > 0)) {
+        factBank = { ...FALLBACK_FACTS, ...next };
+        rebuildFactPool();
+      }
+    } catch {
+      // keep fallback facts
+    }
+  }
+
   function getNextFact() {
-    const fact = FUN_FACTS[factIndex % FUN_FACTS.length];
+    if (factPool.length === 0) rebuildFactPool();
+    const fact = factPool[factIndex % Math.max(1, factPool.length)];
     factIndex++;
-    return fact;
+    return fact || 'Did you know? Curiosity compounds faster than certainty.';
   }
 
   /**
@@ -622,15 +854,18 @@
     if (settings.replacementMode !== 'fun_facts') { el.remove(); return; }
 
     const fact = getNextFact() || '…';
+    const placeholderId = `sf_ph_${++placeholderIdCounter}`;
+    placeholderRestore.set(placeholderId, { original: el, ts: Date.now() });
 
     const ph = document.createElement('div');
     ph.className = 'sf-placeholder';
+    ph.setAttribute('data-sf-id', placeholderId);
     ph.setAttribute('data-sf-filter-category', result.category || 'unknown');
     ph.innerHTML =
       `<div class="sf-ph-header">` +
         `<span class="sf-ph-icon">✨</span>` +
         `<span class="sf-ph-label">fun fact</span>` +
-        `<span class="sf-ph-tag">filtered by SlopFilter</span>` +
+        `<span class="sf-ph-tag">filtered by SlopFilter <button class="sf-ph-undo" data-sf-undo="${placeholderId}" type="button">undo</button></span>` +
       `</div>` +
       `<p class="sf-ph-fact">${fact}</p>`;
 
@@ -678,7 +913,7 @@
   // ─── CORE SCAN FUNCTION ───────────────────────────────────────────────────────
 
   function scanElement(el) {
-    if (!settings.enabled) return;
+    if (!settings.enabled || !isCurrentSiteEnabled()) return;
 
     // Skip invisible or already-removed elements
     if (!el.isConnected) return;
@@ -706,22 +941,12 @@
     }
 
     if (isLinkedIn) {
-      const withinPost = Boolean(el.closest(LINKEDIN_POST_SELECTOR) || el.matches(LINKEDIN_POST_SELECTOR));
-      if (!withinPost) {
-        processed.add(el);
-        return;
-      }
-      const isTextCandidate = Boolean(el.matches(LINKEDIN_TEXT_SELECTOR) || el.closest(LINKEDIN_TEXT_SELECTOR));
+      // Mirror Twitter: we only accept the POST CONTAINER (identified by stable
+      // data attributes). Anything that isn't itself a post container is skipped.
+      // actionTarget() handles the rare case where a child was enqueued.
+      if (inSkipZone(el)) { processed.add(el); return; }
       const isPostContainer = el.matches(LINKEDIN_POST_SELECTOR);
-      // Prefer text blocks; avoid scoring whole containers when text blocks are available.
-      if (isPostContainer && el.querySelector(LINKEDIN_TEXT_SELECTOR)) {
-        processed.add(el);
-        return;
-      }
-      if (!isTextCandidate && !isPostContainer) {
-        processed.add(el);
-        return;
-      }
+      if (!isPostContainer) { processed.add(el); return; }
     }
 
     // Skip Twitter sidebar / trending / who-to-follow / nav zones
@@ -762,8 +987,21 @@
       ? 1
       : (el.dataset?.testid === 'tweetText'
           ? Math.min(settings.minTextLength, 20)
-          : settings.minTextLength);
-    if (text.length < effectiveMinLength) return;
+          : (isLinkedIn ? Math.min(settings.minTextLength, 24) : settings.minTextLength));
+    const hasMedia = Boolean(target.querySelector('img,video'));
+    if (text.length < effectiveMinLength) {
+      if (settings.modes.ai && hasMedia && target.isConnected) {
+        const mediaResult = evaluateMediaSync(target);
+        if (mediaResult.flagged) {
+          clearActionState(target);
+          upsertDebugEvalBadge(target, mediaResult);
+          processResult(target, mediaResult);
+        } else {
+          scheduleVideoProbes(target);
+        }
+      }
+      return;
+    }
 
     const result = window.SlopDetector.detect(text, settings.modes);
     clearActionState(target);
@@ -778,6 +1016,7 @@
         processResult(target, mediaResult);
       } else {
         target.querySelectorAll('video').forEach(v => evaluateVideoFirstFrame(target, v));
+        scheduleVideoProbes(target);
       }
     }
   }
@@ -799,7 +1038,12 @@
       }
       const next = pendingQueue.shift();
       queued.delete(next);
+      const t0 = settings.debugScanAll ? performance.now() : 0;
       scanElement(next);
+      if (settings.debugScanAll) {
+        const dt = performance.now() - t0;
+        if (dt > 12) console.debug('[SlopFilter] slow-scan', dt.toFixed(1), next?.tagName || 'node');
+      }
     }
     idleScheduled = false;
   }
@@ -816,6 +1060,9 @@
 
   function enqueue(el) {
     if (queued.has(el)) return;
+    if (pendingQueue.length > 2500) {
+      pendingQueue.shift();
+    }
     queued.add(el);
     pendingQueue.push(el);
     scheduleFlush();
@@ -824,7 +1071,7 @@
   // ─── INITIAL SCAN ─────────────────────────────────────────────────────────────
 
   function initialScan() {
-    const candidates = document.querySelectorAll(CANDIDATE_SELECTOR);
+    const candidates = document.querySelectorAll(activeCandidateSelector());
     candidates.forEach(enqueue);
   }
 
@@ -845,7 +1092,7 @@
   );
 
   function observeNewElements(root) {
-    root.querySelectorAll(CANDIDATE_SELECTOR).forEach(el => {
+    root.querySelectorAll(activeCandidateSelector()).forEach(el => {
       if (!inSkipZone(el)) {
         intersectionObserver.observe(el);
       }
@@ -859,15 +1106,18 @@
   const MUTATION_DEBOUNCE_MS = 120;
 
   const mutationObserver = new MutationObserver((mutations) => {
-    if (!settings.enabled) return;
+    if (!settings.enabled || document.visibilityState !== 'visible') return;
 
     clearTimeout(mutationTimer);
     mutationTimer = setTimeout(() => {
+      if (!settings.enabled || document.visibilityState !== 'visible') return;
+      const selector = activeCandidateSelector();
+      let addedBudget = 1200;
       for (const mutation of mutations) {
         if (mutation.type === 'characterData') {
           const parent = mutation.target?.parentElement;
           if (!parent) continue;
-          const candidate = parent.closest(CANDIDATE_SELECTOR);
+          const candidate = parent.closest(selector);
           if (candidate) enqueue(candidate);
           continue;
         }
@@ -876,8 +1126,10 @@
           if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
           // Scan node itself if it matches
-          if (node.matches && node.matches(CANDIDATE_SELECTOR)) {
+          if (node.matches && node.matches(selector)) {
             if (!inSkipZone(node)) enqueue(node);
+            addedBudget--;
+            if (addedBudget <= 0) break;
           }
 
           // Directly enqueue all matching descendants.
@@ -887,10 +1139,13 @@
           // visible (Twitter's virtual scroll injects nodes that are
           // immediately in the viewport) are silently skipped forever.
           // Direct enqueue catches them on the next idle tick.
-          node.querySelectorAll(CANDIDATE_SELECTOR).forEach(el => {
+          node.querySelectorAll(selector).forEach(el => {
             if (!inSkipZone(el)) enqueue(el);
+            addedBudget--;
           });
+          if (addedBudget <= 0) break;
         }
+        if (addedBudget <= 0) break;
       }
     }, MUTATION_DEBOUNCE_MS);
   });
@@ -908,12 +1163,8 @@
   window.addEventListener('scroll', () => {
     clearTimeout(scrollTimer);
     scrollTimer = setTimeout(() => {
-      if (!settings.enabled) return;
-      const isTwitter = /^(twitter|x)\.com$/.test(location.hostname);
-      const isLinkedIn = /(^|\.)linkedin\.com$/.test(location.hostname);
-      const selector = isTwitter
-        ? '[data-testid="tweetText"],[data-testid="tweet"]'
-        : (isLinkedIn ? `${LINKEDIN_POST_SELECTOR},${LINKEDIN_TEXT_SELECTOR}` : CANDIDATE_SELECTOR);
+      if (!settings.enabled || document.visibilityState !== 'visible') return;
+      const selector = activeCandidateSelector();
       const vhLow  = -600;
       const vhHigh = window.innerHeight + 600;
       document.querySelectorAll(selector).forEach(el => {
@@ -924,32 +1175,20 @@
     }, 100);
   }, { passive: true });
 
-  const AUTO_SWEEP_MS = 2000;
+  const AUTO_SWEEP_MS = 7000;
   let autoSweepTimer = null;
 
   function startAutoSweep() {
     if (autoSweepTimer) return;
     autoSweepTimer = setInterval(() => {
-      if (!settings.enabled) return;
-      if (/^(twitter|x)\.com$/.test(location.hostname)) {
-        document.querySelectorAll('[data-testid="tweetText"],[data-testid="tweet"]').forEach(enqueue);
-        return;
-      }
-      if (/(^|\.)linkedin\.com$/.test(location.hostname)) {
-        document.querySelectorAll(`${LINKEDIN_POST_SELECTOR},${LINKEDIN_TEXT_SELECTOR}`).forEach(enqueue);
-        return;
-      }
-      document.querySelectorAll(CANDIDATE_SELECTOR).forEach(enqueue);
+      if (!settings.enabled || document.visibilityState !== 'visible') return;
+      document.querySelectorAll(activeCandidateSelector()).forEach(enqueue);
     }, AUTO_SWEEP_MS);
   }
 
   function enqueueVisibleFeedCandidates() {
-    if (!settings.enabled) return;
-    const isTwitter = /^(twitter|x)\.com$/.test(location.hostname);
-    const isLinkedIn = /(^|\.)linkedin\.com$/.test(location.hostname);
-    const selector = isTwitter
-      ? '[data-testid="tweetText"],[data-testid="tweet"]'
-      : (isLinkedIn ? `${LINKEDIN_POST_SELECTOR},${LINKEDIN_TEXT_SELECTOR}` : CANDIDATE_SELECTOR);
+    if (!settings.enabled || document.visibilityState !== 'visible') return;
+    const selector = activeCandidateSelector();
     const vhLow = -1000;
     const vhHigh = window.innerHeight + 1000;
     document.querySelectorAll(selector).forEach(el => {
@@ -977,7 +1216,10 @@
 
       case 'UPDATE_SETTINGS':
         settings = { ...settings, ...msg.settings };
+        settings.siteModes = { twitter: true, linkedin: true, ...(settings.siteModes || {}) };
         settings.replacementMode = normalizeReplacementMode(settings.replacementMode);
+        settings.factCategories = normalizeFactCategories(settings.factCategories);
+        rebuildFactPool();
         // If scanAll was just turned on, mark already-processed elements too
         if (settings.debugScanAll) {
           document.querySelectorAll('[data-slopfilter]').forEach(el => {
@@ -1026,12 +1268,15 @@
         queued = new WeakSet();
         mediaScanState = new WeakMap();
         factIndex = 0;
+        rebuildFactPool();
 
         pendingQueue.length = 0;    // drop any in-flight queue
         removedCount = 0;
+        placeholderRestore.clear();
 
         // Re-enqueue synchronously, then flush immediately (don't wait for idle)
-        document.querySelectorAll(CANDIDATE_SELECTOR).forEach(el => {
+        const selector = activeCandidateSelector();
+        document.querySelectorAll(selector).forEach(el => {
           if (!inSkipZone(el)) pendingQueue.push(el);
         });
         flushQueue(null); // null deadline = run without yielding
@@ -1061,6 +1306,7 @@
         enabled: settings.enabled,
         debugHighlight: settings.debugHighlight,
         modes: settings.modes,
+        siteModes: settings.siteModes,
         replacementMode: settings.replacementMode,
       },
     }));
@@ -1068,10 +1314,14 @@
   // ─── SETTINGS LOAD & BOOT ─────────────────────────────────────────────────────
 
   chrome.storage.sync.get(
-    { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, debugHighlight: false, debugScanAll: false, replacementMode: 'off' },
+    { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, siteModes: { twitter: true, linkedin: true }, debugHighlight: false, debugScanAll: false, replacementMode: 'off', factCategories: ['all'] },
     (stored) => {
       settings = { ...settings, ...stored };
+      settings.siteModes = { twitter: true, linkedin: true, ...(stored.siteModes || {}) };
       settings.replacementMode = normalizeReplacementMode(stored.replacementMode);
+      settings.factCategories = normalizeFactCategories(stored.factCategories);
+      rebuildFactPool();
+      loadFactBank();
       if (settings.enabled) {
         // Immediately observe all current candidates for intersection
         observeNewElements(document);

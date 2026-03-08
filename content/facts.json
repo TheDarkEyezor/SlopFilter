@@ -1,0 +1,72 @@
+{
+  "science": [
+    "Honey can remain edible for thousands of years when sealed from moisture.",
+    "The human brain uses roughly one fifth of the body's total energy.",
+    "A teaspoon of neutron-star matter would weigh millions of tons on Earth.",
+    "Water can boil and freeze simultaneously at its triple point.",
+    "Human DNA in one body would stretch billions of kilometers if uncoiled.",
+    "Glass is an amorphous solid, not a true liquid.",
+    "Lightning is hotter than the surface of the Sun.",
+    "Your body replaces a large fraction of its cells over time."
+  ],
+  "space": [
+    "Sunlight takes about 8 minutes to travel from the Sun to Earth.",
+    "A day on Venus is longer than a Venus year.",
+    "The International Space Station orbits Earth about every 90 minutes.",
+    "One million Earths could fit inside the Sun.",
+    "Saturn's rings are wide but surprisingly thin compared to their diameter.",
+    "The Milky Way and Andromeda are expected to merge in several billion years.",
+    "Space is silent because sound needs a medium.",
+    "Mars hosts Olympus Mons, the tallest known volcano in the solar system."
+  ],
+  "animals": [
+    "Octopuses have three hearts and blue blood.",
+    "Sea otters hold hands while sleeping so they do not drift apart.",
+    "Butterflies taste with their feet.",
+    "A group of owls is called a parliament.",
+    "Crows can recognize human faces for years.",
+    "Dolphins use unique signature whistles, similar to names.",
+    "Goats have rectangular pupils that improve panoramic vision.",
+    "Mantis shrimps strike so fast they create cavitation bubbles."
+  ],
+  "history": [
+    "Cleopatra lived closer to the Moon landing than to the Great Pyramid's construction.",
+    "Oxford University is older than the Aztec Empire.",
+    "Nintendo began in 1889 as a playing-card company.",
+    "The shortest recorded war lasted less than one hour.",
+    "The Great Fire of London destroyed thousands of homes in 1666.",
+    "The Apollo missions returned moon rocks that are still studied today.",
+    "The first modern Olympics were held in 1896 in Athens.",
+    "The printing press transformed literacy and information distribution in Europe."
+  ],
+  "math": [
+    "Shuffling a deck usually creates an ordering never seen before.",
+    "In a group of 23 people, shared birthdays are more likely than most expect.",
+    "A Mobius strip has one side and one boundary edge.",
+    "Euler's identity links five fundamental constants in one equation.",
+    "Prime numbers are the building blocks of whole numbers.",
+    "Pi is irrational, so its decimal expansion never repeats exactly.",
+    "The Monty Hall problem rewards switching doors.",
+    "The Collatz conjecture is easy to state but still unproven."
+  ],
+  "technology": [
+    "The first computer bug was literally a moth found in hardware.",
+    "Email predates the World Wide Web by decades.",
+    "The first 1 GB hard drive weighed hundreds of pounds.",
+    "GPS works only because satellite clocks account for relativity.",
+    "Open-source software powers much of the modern internet stack.",
+    "Early mobile phones had less computing power than simple modern watches.",
+    "Compression formats make streaming media practical at global scale.",
+    "The Apollo Guidance Computer had tiny memory by today's standards."
+  ],
+  "earth": [
+    "Earth's tectonic plates move about as fast as fingernails grow.",
+    "More fresh water is locked in ice than in rivers and lakes combined.",
+    "The Amazon helps generate much of its own rainfall.",
+    "Ocean currents transport massive amounts of heat around the planet.",
+    "Coral reefs support a high share of marine biodiversity.",
+    "The deepest ocean trench is deeper than Everest is tall.",
+    "Volcanic eruptions can cool climate temporarily by reflecting sunlight.",
+    "Mangroves protect coastlines from erosion and storm damage."
+  ]
+}

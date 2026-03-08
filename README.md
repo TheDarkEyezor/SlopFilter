@@ -28,7 +28,7 @@ Go to the [Releases page](../../releases) and download the latest `SlopFilter-x.
 Unzip the file anywhere permanent on your computer — the browser loads the extension **live from that folder**, so don't delete it after installing.
 
 ```
-unzip SlopFilter-0.1.0.zip -d SlopFilter
+unzip SlopFilter-0.2.0.zip -d SlopFilter
 ```
 
 Or just double-click the ZIP in Finder.
@@ -65,9 +65,11 @@ Click the puzzle-piece icon in the Chrome toolbar → click the pin next to Slop
 Click the **◉ SlopFilter** icon in the toolbar to open the popup.
 
 - **Detection modes** — toggle Slop, AI, Rage-bait, and Misinformation on or off independently.
+- **Sites** — independently enable or disable filtering on X/Twitter and LinkedIn.
 - **Replace filtered posts with** — choose a fun-fact category (Science, Space, Animals, History, Maths) or leave on *Remove* to delete posts silently.
+- **Fun fact categories** — pick `All` or specific categories (Science, Space, Animals, History, Math, Technology, Earth) in the popup.
 - **Highlight instead of remove** — dev mode: colours flagged posts instead of removing them, and shows the score.
-- **Show all scanned tweets** — outlines every element the scanner touches (useful for debugging).
+- **Show all scanned posts** — outlines every element the scanner touches (useful for debugging).
 - **↺ Re-scan page** — force a fresh pass of the current page.
 
 ### Misinformation fact-checking (optional)
@@ -103,6 +105,20 @@ Go to `chrome://extensions`, find SlopFilter, and click **Remove**. You can then
 
 ---
 
+## Detection approach (algorithmic basis)
+
+The current heuristics are intentionally lightweight and on-device, but they are aligned with established directions in research:
+
+- **Check-worthiness detection**: prioritize claim-like sentences (assertions with entities/causal language) before fact-check lookup.
+  - ClaimRank (ACL 2018): https://aclanthology.org/P18-2129/
+  - Context-aware check-worthy claim detection (CLEF CheckThat! 2024): https://ceur-ws.org/Vol-3740/short6.pdf
+- **Fact-check retrieval**: query public review corpora via Google Fact Check Tools API when user key is set.
+  - API docs: https://developers.google.com/fact-check/tools/api/reference/rest/v1alpha1/claims/search
+- **AI-media / deepfake signals**: combine metadata cues, surrounding-text cues, and conservative pixel-style checks.
+  - Deepfake survey (PeerJ Computer Science, 2023): https://pmc.ncbi.nlm.nih.gov/articles/PMC10153040/
+
+---
+
 ## Contributing / building from source
 
 ```bash
@@ -111,9 +127,27 @@ cd SlopFilter
 # No build step — plain JS, load unpacked directly
 ```
 
+### Re-train Naive Bayes token models
+
+```bash
+python3 scripts/train_nb.py
+```
+
+This downloads:
+- Davidson hate/offensive language corpus (rage proxy)
+- HC3 human-vs-ChatGPT corpus (AI-text proxy)
+
+and writes `models/nb_models.json` for regenerating token priors.
+
 To package a release ZIP:
 
 ```bash
 zip -r ../SlopFilter-$(grep '"version"' manifest.json | grep -o '[0-9.]*').zip . \
   --exclude "*.git*" --exclude "*.DS_Store" --exclude "gen_icons.py"
+```
+
+Run pre-release checks:
+
+```bash
+bash scripts/release_check.sh
 ```

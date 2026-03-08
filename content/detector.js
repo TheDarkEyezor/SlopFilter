@@ -70,6 +70,8 @@
       // AI image/content attribution lines — explicit signals of generated content
       { id: 'a19', label: 'AI image attribution',   re: /\b(made|created|generated|imagined|designed|built)\s+(by|with|using)\s+(grok|dall[- ]?e|midjourney|stable\s+diffusion|firefly|ideogram|sora|openai|gemini|claude|copilot|kling|runway)\b/i, weight: 0.9 },
       { id: 'a20', label: 'Grok Imagine tag',       re: /\bgrok\s+imagine\b|@grok\s+imagine\b/i, weight: 0.85 },
+      { id: 'a21', label: 'AI edited/enhanced media',re: /\b(edited|enhanced|upscaled|restored|retouched|remixed)\s+(by|with|using)\s+(ai|grok|dall[- ]?e|midjourney|stable\s+diffusion|runway|firefly|ideogram|flux|kling)\b/i, weight: 0.85 },
+      { id: 'a22', label: 'deepfake/faceswap marker',re: /\b(deepfake|face\s*swap|faceswap|synthetic\s+video)\b/i, weight: 0.9 },
     ],
 
     // ── RAGE-BAIT ───────────────────────────────────────────────────────────────
@@ -105,6 +107,18 @@
       { id: 'r24', label: 'send them back',              re: /\bsend\s+them\s+back\b/i, weight: 0.75 },
       { id: 'r25', label: 'mass migration panic',        re: /\b(mass\s+migration|invasion)\b/i, weight: 0.7 },
       { id: 'r26', label: 'grooming gangs cover-up',     re: /\bgrooming\s+gangs?\b.{0,40}\b(cover.?up|hidden|suppressed)\b/i, weight: 0.8 },
+      // Weaponized vagueness / plausible-deniability framing
+      { id: 'r27', label: 'just asking questions',       re: /\b(just|only)\s+asking\s+questions?\b/i, weight: 0.75 },
+      { id: 'r28', label: 'many are saying',             re: /\b(many|lots\s+of)\s+(people\s+)?(are\s+)?saying\b/i, weight: 0.65 },
+      { id: 'r29', label: 'not racist but',              re: /\b(i['\u2019]?m|im|we['\u2019]?re|were)?\s*not\s+(racist|xenophobic)\s+but\b/i, weight: 0.95 },
+      { id: 'r30', label: 'they do not belong here',     re: /\b(they|these\s+people)\s+(do\s+not|don['\u2019]?t)\s+belong\s+(here|in\s+our\s+country|in\s+our\s+society)\b/i, weight: 0.95 },
+      { id: 'r31', label: 'protect from them',           re: /\b(protect|save)\s+(our\s+)?(kids|children|women|country|culture)\s+from\s+(them|those\s+people)\b/i, weight: 0.9 },
+      { id: 'r32', label: 'illegal invaders',            re: /\b(illegal\s+invaders?|invading\s+hordes?)\b/i, weight: 0.9 },
+      { id: 'r33', label: 'engagement outrage bait',     re: /\b(retweet|share|repost)\s+if\s+you\s+(agree|care|support)|\bif\s+you\s+agree\s+(share|retweet|repost)\b/i, weight: 0.85 },
+      { id: 'r34', label: 'absolute condemnation',       re: /\b(always|never|everyone|no\s+one)\b.{0,35}\b(liar|evil|traitor|disgusting|corrupt)\b/i, weight: 0.75 },
+      { id: 'r35', label: 'enemy outgroup framing',      re: /\b(us\s+vs\s+them|enemy\s+within|traitors?\s+among\s+us|they\s+are\s+coming\s+for)\b/i, weight: 0.8 },
+      { id: 'r36', label: 'boycott/punish command',      re: /\b(boycott|punish|expose|shame)\s+(them|these\s+people|anyone\s+who)\b/i, weight: 0.75 },
+      { id: 'r37', label: 'question trap outrage',       re: /\bwhy\s+is\s+nobody\s+talking\s+about\b|\bwhat\s+are\s+they\s+hiding\b/i, weight: 0.8 },
     ],
 
     // ── MISINFORMATION SIGNALS ──────────────────────────────────────────────────
@@ -130,7 +144,58 @@
       { id: 'mi13', label: 'do your own research',      re: /\bdo\s+your\s+(own\s+)?research\b/i, weight: 0.5 },
       { id: 'mi14', label: 'real truth/hidden reason',  re: /\bthe\s+real\s+(truth|reason|story|cause|agenda)\s+(is|they|behind)\b/i, weight: 0.55 },
       { id: 'mi15', label: 'sovereign citizen theory',  re: /\b(sovereign\s+citizen|strawman\s+(theory|account)|ucc\s+\d+\s+filing)\b/i, weight: 0.8 },
+      { id: 'mi16', label: 'unnamed insiders',          re: /\b(insiders?|sources?|experts?)\s+(say|said|confirm|confirmed)\b.{0,40}\b(won['\u2019]?t|cannot|can['\u2019]?t)\s+(say|name|be\s+named)\b/i, weight: 0.75 },
+      { id: 'mi17', label: 'everyone knows truth',      re: /\b(everyone\s+knows|it['\u2019]?s\s+obvious)\b.{0,40}\b(they\s+lie|media\s+lies|cover.?up)\b/i, weight: 0.7 },
+      { id: 'mi18', label: 'heard it from',             re: /\b(i\s+heard|we\s+heard|rumor\s+has\s+it)\b.{0,45}\b(therefore|so)\b/i, weight: 0.6 },
     ],
+  };
+
+  const VAGUE_HEDGE_RE = /\b(apparently|allegedly|supposedly|rumou?r|rumor|maybe|might|could|perhaps|i\s+heard|many\s+are\s+saying|people\s+are\s+saying|i['\u2019]?m\s+just\s+asking)\b/gi;
+  const TARGET_GROUP_RE = /\b(immigrants?|migrants?|muslims?|jews?|trans\s+people|gay\s+people|leftists?|liberals?|conservatives?|refugees?|foreigners?|minorities?|those\s+people|they)\b/gi;
+  const HARMS_RE = /\b(replace|ruin|destroy|infest|poison|steal|control|corrupt|invade|groom|brainwash|pollute|breed)\b/gi;
+  const OUTRAGE_MORAL_RE = /\b(evil|disgusting|traitor|traitorous|corrupt|sickening|vile|shameful|depraved)\b/gi;
+  const ABSOLUTIST_RE = /\b(always|never|everyone|nobody|all\s+of\s+them|none\s+of\s+them)\b/gi;
+  const MOBILIZE_RE = /\b(share|retweet|repost|boycott|fight\s+back|wake\s+up|stand\s+up)\b/gi;
+  const TOKEN_RE = /[a-z][a-z0-9_'-]{1,20}/g;
+
+  // Lightweight in-memory multinomial Naive Bayes token models.
+  // These are intentionally small and fast; they provide softer probability
+  // signals to complement regex patterns rather than replacing them.
+  const NB_MODELS = {
+    rage: {
+      prior: 0.08,
+      pos: {
+        truth: 40, wake: 40, elite: 8, sheeple: 18, globalists: 17, invasion: 21,
+        migrants: 12, immigrants: 13, media: 12, corrupt: 14, rigged: 15,
+        replacement: 23, genocide: 20, parasitic: 14, vermin: 14, belong: 16,
+        destroyed: 10, censored: 15, traitors: 13, patriots: 11, hoax: 14,
+        lying: 12, stolen: 16, agenda: 14, cover: 10, secret: 12
+      },
+      neg: {
+        update: 14, report: 12, data: 18, study: 17, analysis: 17, source: 12,
+        methodology: 8, evidence: 14, meeting: 9, project: 9, product: 8,
+        roadmap: 8, interview: 6, tutorial: 7, learning: 8, research: 14,
+        documentation: 11, changelog: 6, release: 7, summary: 10
+      },
+    },
+    ai: {
+      prior: 0.1,
+      pos: {
+        important: 40, ensure: 40, overall: 40, additionally: 40, provide: 40,
+        consider: 40, however: 40, provides: 40, summary: 24, therefore: 24,
+        comprehensive: 18, clarify: 17, navigate: 13, explore: 12, assist: 11,
+        insights: 10, landscape: 8, prompt: 8, model: 28, synthetic: 7,
+        robust: 8, conclusion: 6, certainly: 6, generated: 14, delve: 9,
+        midjourney: 12, dalle: 12, diffusion: 12, deepfake: 11
+      },
+      neg: {
+        maybe: 20, probably: 20, basically: 20, "isn't": 20, "aren't": 16,
+        "wouldn't": 15, welcome: 18, thanks: 18, thank: 16, really: 18,
+        "didn't": 18, obviously: 12, meanwhile: 8, bug: 12, fix: 12, stack: 10,
+        crash: 9, repro: 10, commit: 9, benchmark: 12, cpu: 8, memory: 8,
+        latency: 9, docs: 8, npm: 7, build: 8, deploy: 7
+      },
+    },
   };
 
   // ─── DENSITY CHECKS (structural heuristics, not pattern-based) ────────────────
@@ -183,6 +248,101 @@
     if (maxRepeat >= 3 && sentences.length <= 8) return { score: 0.7, category };
     if (maxRepeat >= 4) return { score: 0.85, category };
     return { score: 0, category: 'slop' };
+  }
+
+  /**
+   * Detect "vague but harmful" framing:
+   * - lots of hedging/unnamed claims ("people are saying", "allegedly")
+   * - group-targeted accusations without concrete evidence
+   *
+   * Returns additive boosts for rage + misinfo channels.
+   */
+  function vagueSmearScore(text) {
+    const words = text.trim().split(/\s+/).length;
+    if (words < 18) return { rage: 0, misinfo: 0 };
+
+    const hedgeCount = (text.match(VAGUE_HEDGE_RE) || []).length;
+    const groupCount = (text.match(TARGET_GROUP_RE) || []).length;
+    const harmCount = (text.match(HARMS_RE) || []).length;
+    const numberCount = (text.match(/\b\d[\d.,]*\b/g) || []).length;
+    const hasLink = /https?:\/\//i.test(text);
+
+    let rage = 0;
+    let misinfo = 0;
+
+    if (hedgeCount >= 2 && groupCount >= 1) {
+      rage += 0.35;
+      misinfo += 0.35;
+    }
+    if (hedgeCount >= 1 && groupCount >= 1 && harmCount >= 1) {
+      rage += 0.45;
+      misinfo += 0.25;
+    }
+    // No concrete markers (numbers/links) but strong accusatory framing.
+    if (groupCount >= 1 && harmCount >= 1 && numberCount === 0 && !hasLink && words > 28) {
+      rage += 0.25;
+      misinfo += 0.25;
+    }
+
+    return {
+      rage: Math.min(0.8, rage),
+      misinfo: Math.min(0.8, misinfo),
+    };
+  }
+
+  function inflammatoryStyleScore(text) {
+    const words = text.trim().split(/\s+/).length;
+    if (words < 10) return 0;
+
+    const outrage = (text.match(OUTRAGE_MORAL_RE) || []).length;
+    const absolutes = (text.match(ABSOLUTIST_RE) || []).length;
+    const mobilize = (text.match(MOBILIZE_RE) || []).length;
+    const excl = (text.match(/!/g) || []).length;
+    const qmarks = (text.match(/\?/g) || []).length;
+
+    let score = 0;
+    if (outrage >= 1 && absolutes >= 1) score += 0.25;
+    if (outrage >= 1 && /\b(immigrants?|migrants?|muslims?|jews?|trans\s+people|gay\s+people|leftists?|liberals?|conservatives?|refugees?|foreigners?|minorities?|those\s+people|they)\b/i.test(text)) score += 0.3;
+    if (mobilize >= 1 && (outrage >= 1 || absolutes >= 1)) score += 0.25;
+    if (excl >= 3 || qmarks >= 3) score += 0.12;
+    return Math.min(0.65, score);
+  }
+
+  function sigmoid(x) {
+    return 1 / (1 + Math.exp(-x));
+  }
+
+  function tokenizeLower(text) {
+    const tokens = text.toLowerCase().match(TOKEN_RE);
+    return tokens || [];
+  }
+
+  function naiveBayesProb(text, model) {
+    const tokens = tokenizeLower(text);
+    if (tokens.length === 0) return 0;
+
+    const posCounts = model.pos;
+    const negCounts = model.neg;
+    const vocab = new Set([...Object.keys(posCounts), ...Object.keys(negCounts)]);
+    const v = Math.max(1, vocab.size);
+    const posTotal = Object.values(posCounts).reduce((a, b) => a + b, 0);
+    const negTotal = Object.values(negCounts).reduce((a, b) => a + b, 0);
+    let llr = Math.log((model.prior || 0.1) / (1 - (model.prior || 0.1)));
+
+    // Use unique tokens to reduce over-weighting repeated slogans.
+    const uniq = new Set(tokens);
+    for (const t of uniq) {
+      const cp = (posCounts[t] || 0) + 1;
+      const cn = (negCounts[t] || 0) + 1;
+      llr += Math.log(cp / (posTotal + v)) - Math.log(cn / (negTotal + v));
+    }
+    return sigmoid(llr);
+  }
+
+  function bayesBoost(prob, low = 0.62, high = 0.86) {
+    if (prob < low) return 0;
+    if (prob >= high) return 0.6;
+    return 0.2 + ((prob - low) / (high - low)) * 0.4;
   }
 
   // ─── CORE DETECTION FUNCTION ──────────────────────────────────────────────────
@@ -242,6 +402,39 @@
         if (modes[target]) scores[target] = Math.min(1, scores[target] + anaphora.score);
       }
     }
+    // Vague smear rhetoric often mixes disinformation and hateful targeting.
+    if (modes.rage || modes.misinfo) {
+      const vague = vagueSmearScore(text);
+      if (modes.rage && vague.rage > 0) {
+        scores.rage = Math.min(1, scores.rage + vague.rage);
+      }
+      if (modes.misinfo && vague.misinfo > 0) {
+        scores.misinfo = Math.min(1, scores.misinfo + vague.misinfo);
+      }
+    }
+    if (modes.rage) {
+      const infScore = inflammatoryStyleScore(text);
+      if (infScore > 0) {
+        scores.rage = Math.min(1, scores.rage + infScore);
+      }
+    }
+    // Naive Bayes probabilities (token model) provide softer signals than regex.
+    if (modes.rage) {
+      const rageProb = naiveBayesProb(text, NB_MODELS.rage);
+      const boost = bayesBoost(rageProb, 0.64, 0.9);
+      if (boost > 0) {
+        scores.rage = Math.min(1, scores.rage + boost);
+        hits.push(`[rage] nb:${rageProb.toFixed(2)}`);
+      }
+    }
+    if (modes.ai) {
+      const aiProb = naiveBayesProb(text, NB_MODELS.ai);
+      const boost = bayesBoost(aiProb, 0.66, 0.9);
+      if (boost > 0) {
+        scores.ai = Math.min(1, scores.ai + boost);
+        hits.push(`[ai] nb:${aiProb.toFixed(2)}`);
+      }
+    }
 
     // Pick dominant category
     const dominant = Object.entries(scores).reduce(
@@ -249,9 +442,12 @@
     );
 
     const topScore = dominant[1];
+    const wordCount = text.trim().split(/\s+/).length;
     const THRESHOLD = 0.6;
+    const effectiveThreshold =
+      (dominant[0] === 'rage' && wordCount < 14) ? 0.72 : THRESHOLD;
 
-    let dominantCategory = topScore >= THRESHOLD ? dominant[0] : null;
+    let dominantCategory = topScore >= effectiveThreshold ? dominant[0] : null;
     // Rage/slop arbitration: if rage is close and has stronger signal count,
     // prefer rage classification to avoid political rage-bait being labelled slop.
     if (dominantCategory && dominantCategory !== 'rage' && modes.rage) {
@@ -267,7 +463,7 @@
     };
 
     return {
-      flagged:        topScore >= THRESHOLD,
+      flagged:        topScore >= effectiveThreshold,
       // misinfo items are dimmed + fact-checked, not removed — signal this to content.js
       needsFactCheck: dominantCategory === 'misinfo',
       score:          parseFloat(topScore.toFixed(3)),

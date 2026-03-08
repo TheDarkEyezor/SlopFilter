@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "sources": {
+    "rage": "Davidson hate/offensive language",
+    "ai": "HC3 human-vs-chatgpt"
+  },
+  "models": {
+    "rage": {
+      "prior": 0.5,
+      "pos": {
+        "wake": 40,
+        "truth": 40,
+        "elite": 8,
+        "belong": 3,
+        "cover": 3,
+        "sheeple": 3,
+        "destroyed": 3,
+        "traitors": 3,
+        "rigged": 2,
+        "traitor": 5,
+        "censored": 2,
+        "lying": 7,
+        "media": 7,
+        "stolen": 2,
+        "patriots": 1,
+        "patriot": 1
+      },
+      "neg": {}
+    },
+    "ai": {
+      "prior": 0.5,
+      "pos": {
+        "important": 40,
+        "ensure": 40,
+        "overall": 40,
+        "additionally": 40,
+        "navigate": 13,
+        "provide": 40,
+        "consider": 40,
+        "landscape": 8,
+        "clarify": 17,
+        "insights": 10,
+        "comprehensive": 18,
+        "however": 40,
+        "summary": 24,
+        "prompt": 4,
+        "explore": 12,
+        "delve": 1,
+        "provides": 40,
+        "synthetic": 5,
+        "model": 40,
+        "robust": 3,
+        "therefore": 24,
+        "conclusion": 2,
+        "assist": 11,
+        "certainly": 2,
+        "notably": 1,
+        "furthermore": 1
+      },
+      "neg": {
+        "maybe": 40,
+        "probably": 40,
+        "basically": 40,
+        "isn't": 40,
+        "aren't": 35,
+        "wouldn't": 34,
+        "welcome": 40,
+        "thanks": 40,
+        "obviously": 21,
+        "thank": 34,
+        "really": 40,
+        "didn't": 40,
+        "meanwhile": 11,
+        "moreover": 5
+      }
+    }
+  },
+  "stats": {
+    "rage": {
+      "npos": 1178,
+      "nneg": 1178,
+      "top_k": 22
+    },
+    "ai": {
+      "npos": 7206,
+      "nneg": 7206,
+      "top_k": 26
+    }
+  }
+}

@@ -11,6 +11,39 @@
  */
 'use strict';
 
+const SETTINGS_SCHEMA_VERSION = 2;
+const SETTINGS_DEFAULTS = {
+  settingsSchemaVersion: SETTINGS_SCHEMA_VERSION,
+  enabled: true,
+  modes: { slop: true, ai: true, rage: true, misinfo: true },
+  siteModes: { twitter: true, linkedin: true },
+  debugHighlight: false,
+  debugScanAll: false,
+  replacementMode: 'off',
+  factCategories: ['all'],
+  factCheckApiKey: '',
+};
+
+async function migrateSettings() {
+  const current = await chrome.storage.sync.get(SETTINGS_DEFAULTS);
+  const next = { ...current };
+  next.modes = { slop: true, ai: true, rage: true, misinfo: true, ...(current.modes || {}) };
+  next.siteModes = { twitter: true, linkedin: true, ...(current.siteModes || {}) };
+  if (!Array.isArray(current.factCategories) || current.factCategories.length === 0) {
+    next.factCategories = ['all'];
+  }
+  next.replacementMode = current.replacementMode === 'fun_facts' ? 'fun_facts' : 'off';
+  next.settingsSchemaVersion = SETTINGS_SCHEMA_VERSION;
+  await chrome.storage.sync.set(next);
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  migrateSettings().catch(() => {});
+});
+chrome.runtime.onStartup.addListener(() => {
+  migrateSettings().catch(() => {});
+});
+
 // ─── PER-TAB STATS ────────────────────────────────────────────────────────────
 
 const tabStats = {};
@@ -104,15 +137,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // ─── FACT-CHECK LOGIC ─────────────────────────────────────────────────────────
 
 async function runFactCheck(text) {
+  const claim = extractClaimCandidate(text);
+  const queryText = claim || text;
+
   // 1. Try Google Fact Check Tools API if the user has configured a key
   const { factCheckApiKey } = await chrome.storage.sync.get({ factCheckApiKey: '' });
   if (factCheckApiKey) {
-    const r = await googleFactCheck(text, factCheckApiKey).catch(() => null);
+    const r = await googleFactCheck(queryText, factCheckApiKey).catch(() => null);
     if (r) return r;
   }
 
   // 2. Fall back to Wikipedia topic context (always available, no key needed)
-  const r = await wikiContext(text).catch(() => null);
+  const r = await wikiContext(queryText).catch(() => null);
   if (r) return r;
 
   // 3. Last resort
@@ -122,6 +158,44 @@ async function runFactCheck(text) {
     source:    'SlopFilter',
     sourceUrl: '',
   };
+}
+
+function extractClaimCandidate(text) {
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+
+  const sentences = clean
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .slice(0, 10);
+
+  if (sentences.length === 0) return clean.slice(0, 260);
+
+  const CLAIM_TRIGGER_RE = /\b(is|are|was|were|will|causes?|caused|proves?|proven|shows?|means?|because|therefore|hoax|fake|cover.?up|truth|lied|lying|rigged)\b/i;
+  const ENTITY_LIKE_RE = /\b([A-Z][a-z]{2,}|\d{2,}[%]?)\b/g;
+
+  let best = '';
+  let bestScore = -1;
+
+  for (const s of sentences) {
+    const len = s.length;
+    if (len < 24) continue;
+
+    let score = 0;
+    if (CLAIM_TRIGGER_RE.test(s)) score += 2;
+    score += Math.min(2, (s.match(ENTITY_LIKE_RE) || []).length * 0.6);
+    if (/\b(according to|reports?|study|data|evidence)\b/i.test(s)) score += 0.8;
+    if (/\b(i think|i feel|imo|in my opinion)\b/i.test(s)) score -= 0.9;
+    if (len > 300) score -= 0.8;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+
+  return (best || clean).slice(0, 260);
 }
 
 // ── Google Fact Check Tools API ───────────────────────────────────────────────

@@ -13,10 +13,23 @@ const $ = id => document.getElementById(id);
 let settings = {
   enabled: true,
   modes: { slop: true, ai: true, rage: true, misinfo: true },
+  siteModes: { twitter: true, linkedin: true },
   debugHighlight: false,
   debugScanAll:   false,
   replacementMode: 'off',
+  factCategories: ['all'],
 };
+
+const FACT_CATEGORY_VALUES = ['all', 'science', 'space', 'animals', 'history', 'math', 'technology', 'earth'];
+
+function normalizeFactCategories(categories) {
+  if (!Array.isArray(categories) || categories.length === 0) return ['all'];
+  const clean = categories
+    .map(v => String(v || '').trim().toLowerCase())
+    .filter(v => FACT_CATEGORY_VALUES.includes(v));
+  if (clean.length === 0 || clean.includes('all')) return ['all'];
+  return [...new Set(clean)];
+}
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -28,12 +41,22 @@ function applySettingsToUI() {
     const el = document.querySelector(`[data-mode="${mode}"]`);
     if (el) el.checked = active;
   }
+  for (const [site, active] of Object.entries(settings.siteModes || {})) {
+    const el = document.querySelector(`[data-site="${site}"]`);
+    if (el) el.checked = active;
+  }
 
   $('debugToggle').checked       = settings.debugHighlight;
   $('debugScanAllToggle').checked = settings.debugScanAll;
 
   const activeRadio = document.querySelector(`[name="replacementMode"][value="${settings.replacementMode || 'off'}"]`);
   if (activeRadio) activeRadio.checked = true;
+
+  const selectedFacts = normalizeFactCategories(settings.factCategories);
+  document.querySelectorAll('[data-fact-category]').forEach(el => {
+    const key = el.getAttribute('data-fact-category');
+    el.checked = selectedFacts.includes('all') ? key === 'all' : selectedFacts.includes(key);
+  });
 }
 
 function pushSettings() {
@@ -77,6 +100,14 @@ document.querySelectorAll('[data-mode]').forEach(checkbox => {
   });
 });
 
+document.querySelectorAll('[data-site]').forEach(checkbox => {
+  checkbox.addEventListener('change', e => {
+    const site = e.target.getAttribute('data-site');
+    settings.siteModes[site] = e.target.checked;
+    pushSettings();
+  });
+});
+
 $('debugToggle').addEventListener('change', e => {
   settings.debugHighlight = e.target.checked;
   pushSettings();
@@ -90,6 +121,28 @@ $('debugScanAllToggle').addEventListener('change', e => {
 document.querySelectorAll('[name="replacementMode"]').forEach(radio => {
   radio.addEventListener('change', e => {
     settings.replacementMode = e.target.value;
+    pushSettings();
+  });
+});
+
+document.querySelectorAll('[data-fact-category]').forEach(checkbox => {
+  checkbox.addEventListener('change', e => {
+    const category = e.target.getAttribute('data-fact-category');
+    let current = normalizeFactCategories(settings.factCategories);
+
+    if (category === 'all') {
+      settings.factCategories = ['all'];
+      applySettingsToUI();
+      pushSettings();
+      return;
+    }
+
+    current = current.filter(c => c !== 'all');
+    if (e.target.checked) current.push(category);
+    else current = current.filter(c => c !== category);
+
+    settings.factCategories = normalizeFactCategories(current);
+    applySettingsToUI();
     pushSettings();
   });
 });
@@ -120,12 +173,14 @@ $('fcApiKeySave').addEventListener('click', () => {
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 chrome.storage.sync.get(
-  { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, debugHighlight: false, debugScanAll: false, factCheckApiKey: '', replacementMode: 'off' },
+  { enabled: true, modes: { slop: true, ai: true, rage: true, misinfo: true }, siteModes: { twitter: true, linkedin: true }, debugHighlight: false, debugScanAll: false, factCheckApiKey: '', replacementMode: 'off', factCategories: ['all'] },
   (stored) => {
     settings = { ...settings, ...stored };
     settings.modes = { slop: true, ai: true, rage: true, misinfo: true, ...stored.modes };
+    settings.siteModes = { twitter: true, linkedin: true, ...stored.siteModes };
     settings.debugScanAll    = stored.debugScanAll    ?? false;
     settings.replacementMode = stored.replacementMode === 'fun_facts' ? 'fun_facts' : 'off';
+    settings.factCategories = normalizeFactCategories(stored.factCategories);
     if (fcKeyInput) fcKeyInput.value = stored.factCheckApiKey || '';
     applySettingsToUI();
     refreshStats();

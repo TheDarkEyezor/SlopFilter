@@ -1,0 +1,35 @@
+[
+  {
+    "name": "rage engagement bait",
+    "text": "Why is nobody talking about this? Share if you agree. They are lying to us.",
+    "modes": { "slop": true, "ai": true, "rage": true, "misinfo": true },
+    "expect_flagged": true,
+    "expect_category": "rage"
+  },
+  {
+    "name": "short rage should be stricter",
+    "text": "They are evil. Share now.",
+    "modes": { "slop": true, "ai": true, "rage": true, "misinfo": true },
+    "expect_category_not": "rage"
+  },
+  {
+    "name": "ai style marker",
+    "text": "Certainly, here is a comprehensive summary. In conclusion, it is clear that this model helps.",
+    "modes": { "slop": true, "ai": true, "rage": true, "misinfo": true },
+    "expect_flagged": true,
+    "expect_category": "ai"
+  },
+  {
+    "name": "misinfo conspiracy",
+    "text": "The moon landing was faked and the media is covering up the truth.",
+    "modes": { "slop": true, "ai": true, "rage": true, "misinfo": true },
+    "expect_flagged": true,
+    "expect_category": "misinfo"
+  },
+  {
+    "name": "benign post",
+    "text": "Team update: shipped v1.2.1 with memory fixes and lower latency in search.",
+    "modes": { "slop": true, "ai": true, "rage": true, "misinfo": true },
+    "expect_flagged": false
+  }
+]

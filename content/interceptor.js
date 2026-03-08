@@ -60,25 +60,49 @@
     { re: /\b(parasitic|verminous?|subhuman|cockroach|locust|infestation)\b/i,                  w: 0.9  }, // r18
     { re: /\b(great\s+replacement|demographic\s+replacement|white\s+genocide|ethnic\s+replacement)\b/i, w: 0.95 }, // r20
     { re: /\b(extinction|erasure|end)\s+(of|as)\s+(a\s+|the\s+)?(race|people|native|culture)|\b(native\s+peoples?|rightful\s+heirs?)\b/i, w: 0.9 }, // r21
+    { re: /\b(just|only)\s+asking\s+questions?\b/i,                                             w: 0.75 }, // r27
+    { re: /\b(i['\u2019]?m|im|we['\u2019]?re|were)?\s*not\s+(racist|xenophobic)\s+but\b/i,      w: 0.95 }, // r29
+    { re: /\b(they|these\s+people)\s+(do\s+not|don['\u2019]?t)\s+belong\s+(here|in\s+our\s+country|in\s+our\s+society)\b/i, w: 0.95 }, // r30
+    { re: /\b(illegal\s+invaders?|invading\s+hordes?)\b/i,                                       w: 0.9 }, // r32
+    { re: /\b(retweet|share|repost)\s+if\s+you\s+(agree|care|support)|\bif\s+you\s+agree\s+(share|retweet|repost)\b/i, w: 0.85 }, // r33
+    { re: /\b(always|never|everyone|no\s+one)\b.{0,35}\b(liar|evil|traitor|disgusting|corrupt)\b/i, w: 0.75 }, // r34
+    { re: /\b(us\s+vs\s+them|enemy\s+within|traitors?\s+among\s+us|they\s+are\s+coming\s+for)\b/i, w: 0.8 }, // r35
+    { re: /\bwhy\s+is\s+nobody\s+talking\s+about\b|\bwhat\s+are\s+they\s+hiding\b/i,             w: 0.8 }, // r37
     // ── Platform propaganda / absolute truth claims ───────────────────────────
     { re: /\bonly\s+\w+\s+(speaks?|knows?|tells?|shows?|reveals?|understands?)\s+the\s+truth\b/i, w: 0.85 }, // s21
     { re: /\bonly\s+(truthful|unbiased|uncensored|based)\s+(ai|source|news|information|platform|media)\b/i, w: 0.8 }, // s22
     // ── Truth-bait assertions ─────────────────────────────────────────────────
     { re: /\bdo\s+you\s+want\s+(to\s+)?(know\s+)?the\s+truth\b/i,                                 w: 0.7  }, // s25
     { re: /\b(this|that)\s+is\s+the\s+(?:real\s+|whole\s+)?truth\b/i,                             w: 0.65 }, // s26
+    { re: /\b(insiders?|sources?|experts?)\s+(say|said|confirm|confirmed)\b.{0,40}\b(won['\u2019]?t|cannot|can['\u2019]?t)\s+(say|name|be\s+named)\b/i, w: 0.75 }, // mi16
     // ── AI-generated image attribution (Grok, Midjourney, DALL-E, etc.) ──────
     { re: /\b(made|created|generated|imagined|designed|built)\s+(by|with|using)\s+(grok|dall[- ]?e|midjourney|stable\s+diffusion|firefly|ideogram|sora|openai|gemini|claude|copilot|kling|runway)\b/i, w: 0.9 }, // a19
     { re: /\bgrok\s+imagine\b|@grok\s+imagine\b/i,                                                 w: 0.85 }, // a20
+    { re: /\b(edited|enhanced|upscaled|restored|retouched|remixed)\s+(by|with|using)\s+(ai|grok|dall[- ]?e|midjourney|stable\s+diffusion|runway|firefly|ideogram|flux|kling)\b/i, w: 0.85 }, // a21
+    { re: /\b(deepfake|face\s*swap|faceswap|synthetic\s+video)\b/i,                                w: 0.9 }, // a22
   ];
 
   // Threshold: weighted score must exceed this to be filtered at the network layer.
   // Deliberately higher than the DOM-layer threshold (0.6) to minimise false
   // positives — the DOM scanner catches borderline cases after the fact.
   const LITE_SCORE_THRESHOLD = 0.75;
+  const LITE_TOKEN_RE = /[a-z][a-z0-9_'-]{1,20}/g;
+  const LITE_NB = {
+    rage: {
+      prior: 0.08,
+      pos: { truth: 26, wake: 26, sheeple: 14, elite: 10, elites: 10, globalists: 12, invasion: 16, replacement: 18, censored: 12, rigged: 11, corrupt: 11, belong: 14, patriots: 10, lying: 10, media: 10 },
+      neg: { update: 12, report: 10, data: 14, study: 12, analysis: 12, source: 9, docs: 9, meeting: 8, project: 8 }
+    },
+    ai: {
+      prior: 0.1,
+      pos: { important: 22, ensure: 20, overall: 18, additionally: 16, provide: 18, consider: 18, however: 16, summary: 14, therefore: 14, comprehensive: 12, clarify: 12, model: 14, generated: 12, prompt: 8, deepfake: 10, delve: 9 },
+      neg: { maybe: 14, probably: 14, basically: 12, thanks: 11, thank: 10, really: 10, bug: 11, fix: 10, stack: 8, crash: 8, benchmark: 10, latency: 8, deploy: 7, release: 7 }
+    }
+  };
 
   /** Returns true if the text is confidently slop. */
   function liteDetect(text) {
-    if (!text || text.length < 40) return false;
+    if (!text || text.length < 24) return false;
     let score = 0;
     for (const { re, w } of LITE_PATTERNS) {
       if (re.test(text)) {
@@ -86,7 +110,31 @@
         if (score >= LITE_SCORE_THRESHOLD) return true;
       }
     }
+    const rageProb = liteNbProb(text, LITE_NB.rage);
+    const aiProb = liteNbProb(text, LITE_NB.ai);
+    if (rageProb >= 0.87 || aiProb >= 0.89) return true;
+    if ((rageProb >= 0.8 || aiProb >= 0.82) && score >= 0.45) return true;
     return false;
+  }
+
+  function liteNbProb(text, model) {
+    const tokens = (text.toLowerCase().match(LITE_TOKEN_RE) || []);
+    if (tokens.length === 0) return 0;
+
+    const pos = model.pos;
+    const neg = model.neg;
+    const vocab = new Set([...Object.keys(pos), ...Object.keys(neg)]);
+    const v = Math.max(1, vocab.size);
+    const posTotal = Object.values(pos).reduce((a, b) => a + b, 0);
+    const negTotal = Object.values(neg).reduce((a, b) => a + b, 0);
+    let llr = Math.log((model.prior || 0.1) / (1 - (model.prior || 0.1)));
+
+    for (const t of new Set(tokens)) {
+      const cp = (pos[t] || 0) + 1;
+      const cn = (neg[t] || 0) + 1;
+      llr += Math.log(cp / (posTotal + v)) - Math.log(cn / (negTotal + v));
+    }
+    return 1 / (1 + Math.exp(-llr));
   }
 
   // ─── STATE ────────────────────────────────────────────────────────────────────
@@ -94,11 +142,20 @@
     enabled: true,
     debugHighlight: false,
     modes: { slop: true, ai: true, rage: true, misinfo: true },
+    siteModes: { twitter: true, linkedin: true },
     replacementMode: 'off',
   };
 
+  function currentSiteKey() {
+    if (/^(twitter|x)\.com$/.test(location.hostname)) return 'twitter';
+    if (/(^|\.)linkedin\.com$/.test(location.hostname)) return 'linkedin';
+    return null;
+  }
+
   function isInterceptorActive() {
     if (!interceptorSettings.enabled) return false;
+    const siteKey = currentSiteKey();
+    if (!siteKey || interceptorSettings.siteModes?.[siteKey] === false) return false;
     // In debug highlight mode we keep payloads intact so DOM-layer highlighting
     // can show exactly what would have been removed.
     if (interceptorSettings.debugHighlight) return false;
@@ -125,8 +182,8 @@
     },
     {
       name: 'linkedin',
-      // Voyager feed, dashes (home feed), search results
-      test: url => /linkedin\.com\/voyager\/api\/(feed|dashes|search|updates)/i.test(url),
+      // Voyager feed, dashes (home feed), search results, messaging
+      test: url => /linkedin\.com\/voyager\/api\/(feed|dashes|search|updates|messaging)/i.test(url),
       filter: filterLinkedIn,
     },
   ];
@@ -212,16 +269,51 @@
 
   // ─── LINKEDIN ADAPTER ────────────────────────────────────────────────────────
 
-  /** Extract the visible text from a LinkedIn feed element. */
+  function normalizeText(s) {
+    return String(s || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractLinkedInTextDeep(node, depth = 0, out = []) {
+    if (!node || depth > 4 || out.length >= 12) return out;
+    if (typeof node === 'string') {
+      const t = normalizeText(node);
+      if (t.length >= 24) out.push(t);
+      return out;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) extractLinkedInTextDeep(item, depth + 1, out);
+      return out;
+    }
+    if (typeof node !== 'object') return out;
+
+    // Prefer fields commonly carrying visible text in Voyager payloads.
+    const candidateKeys = ['text', 'commentary', 'body', 'message', 'title', 'subtitle', 'description'];
+    for (const key of candidateKeys) {
+      if (node[key] != null) extractLinkedInTextDeep(node[key], depth + 1, out);
+    }
+    for (const value of Object.values(node)) {
+      if (value && typeof value === 'object') extractLinkedInTextDeep(value, depth + 1, out);
+    }
+    return out;
+  }
+
+  /** Extract the visible text from a LinkedIn feed/messaging element. */
   function linkedInTextFromElement(el) {
     try {
-      // dashes/home-feed elements
-      return el?.commentary?.text?.text
-          || el?.actor?.description?.text
-          || el?.header?.text?.text
-          // search / updates V2
-          || el?.value?.com?.linkedin?.voyager?.feed?.render?.updateV2?.commentary?.text?.text
-          || null;
+      const quick =
+        el?.commentary?.text?.text ||
+        el?.actor?.description?.text ||
+        el?.header?.text?.text ||
+        el?.message?.body ||
+        el?.body?.text ||
+        el?.value?.com?.linkedin?.voyager?.feed?.render?.updateV2?.commentary?.text?.text ||
+        '';
+      const quickNorm = normalizeText(quick);
+      if (quickNorm.length >= 24) return quickNorm;
+
+      const deep = extractLinkedInTextDeep(el);
+      if (deep.length === 0) return null;
+      return normalizeText(deep.join(' ')).slice(0, 2000);
     } catch { return null; }
   }
 
@@ -242,6 +334,18 @@
       if (Array.isArray(json?.elements))         json.elements         = filterArr(json.elements);
       if (Array.isArray(json?.data?.elements))   json.data.elements    = filterArr(json.data.elements);
       if (Array.isArray(json?.included))         json.included         = filterArr(json.included);
+      // Some Voyager payloads nest additional elements arrays.
+      (function walk(obj, depth) {
+        if (!obj || typeof obj !== 'object' || depth > 5) return;
+        if (Array.isArray(obj)) {
+          for (const item of obj) walk(item, depth + 1);
+          return;
+        }
+        for (const [k, v] of Object.entries(obj)) {
+          if (k === 'elements' && Array.isArray(v)) obj[k] = filterArr(v);
+          else if (v && typeof v === 'object') walk(v, depth + 1);
+        }
+      })(json, 0);
     } catch { /* never break the page */ }
     return removed;
   }
@@ -455,6 +559,13 @@
         rage: true,
         misinfo: true,
         ...detail.modes,
+      };
+    }
+    if (detail.siteModes && typeof detail.siteModes === 'object') {
+      interceptorSettings.siteModes = {
+        twitter: true,
+        linkedin: true,
+        ...detail.siteModes,
       };
     }
     if (typeof detail.replacementMode === 'string') {

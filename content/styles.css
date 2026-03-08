@@ -47,6 +47,21 @@
   white-space: nowrap;
 }
 
+.sf-ph-undo {
+  margin-left: 6px;
+  background: transparent;
+  border: 1px solid #335;
+  color: #9bb3c8;
+  border-radius: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.sf-ph-undo:hover {
+  border-color: #5f86b0;
+  color: #d5e4f2;
+}
+
 .sf-ph-fact {
   font-size: 14px;
   line-height: 1.55;
@@ -115,6 +130,7 @@
 [data-slopfilter-scanned]:not([data-slopfilter]) {
   outline: 2px solid rgba(0, 200, 100, 0.6) !important;
   outline-offset: -2px !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 200, 100, 0.35) !important;
 }
 [data-slopfilter-scanned]:not([data-slopfilter])::after {
   content: "👁 scanned";
@@ -129,6 +145,11 @@
   pointer-events: none;
   z-index: 2147483647;
   white-space: nowrap;
+}
+
+[data-slopfilter-scanned="true"] {
+  outline: 2px solid rgba(0, 200, 100, 0.55) !important;
+  outline-offset: -2px !important;
 }
 
 /* ── Misinfo: blur-until-verified treatment ──────────────────────────────── */
